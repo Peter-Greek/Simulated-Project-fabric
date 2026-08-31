@@ -1,30 +1,17 @@
 pluginManagement {
     repositories {
+        maven {
+            name = "Fabric"
+            url = uri("https://maven.fabricmc.net/")
+        }
         gradlePluginPortal()
         mavenCentral()
-        exclusiveContent {
-            forRepository {
-                maven("https://repo.spongepowered.org/repository/maven-public")
-            }
-            filter {
-                includeGroupAndSubgroups("org.spongepowered")
-            }
-        }
     }
 }
 
-plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
-}
+rootProject.name = "simulated-project-fabric-homestead"
 
-rootProject.name = "simulated-project"
-
-include("all-neoforge")
-include("simulated:common")
-include("simulated:neoforge")
-include("aeronautics:common")
-include("aeronautics:neoforge")
-include("offroad:common")
-include("offroad:neoforge")
-
-include("aeronautics-bundled")
+// Keep the first milestone intentionally small: compile Simulated against the
+// exact Fabric/Create stack shipped by Homestead before porting Aeronautics
+// and Offroad on top of it.
+include("simulated:fabric")
