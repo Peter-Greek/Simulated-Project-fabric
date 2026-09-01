@@ -1,3 +1,5 @@
 {
-  "block.simulated.fabric_test_block": "Simulated Fabric Test Block"
+  "itemGroup.simulated.group": "Create Simulated",
+  "item.simulated.gyroscopic_mechanism": "Gyroscopic Mechanism",
+  "item.simulated.engine_assembly": "Engine Assembly"
 }
