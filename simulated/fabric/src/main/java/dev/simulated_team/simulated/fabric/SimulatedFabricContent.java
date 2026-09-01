@@ -1,5 +1,6 @@
 package dev.simulated_team.simulated.fabric;
 
+import com.simibubi.create.content.processing.sequenced.SequencedAssemblyItem;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlock;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.minecraft.core.Registry;
@@ -7,17 +8,21 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 
 /**
- * First loader-neutral content moved from the upstream Simulated registries.
+ * Loader-neutral content moved from the upstream Simulated registries.
  */
 public final class SimulatedFabricContent {
     public static final Item GYROSCOPIC_MECHANISM = new Item(new Item.Properties());
+    public static final SequencedAssemblyItem INCOMPLETE_GYROSCOPIC_MECHANISM =
+            new SequencedAssemblyItem(new Item.Properties());
+
     public static final Item ENGINE_ASSEMBLY = new Item(new Item.Properties());
+    public static final SequencedAssemblyItem INCOMPLETE_ENGINE_ASSEMBLY =
+            new SequencedAssemblyItem(new Item.Properties());
 
     public static final PhysicsAssemblerBlock PHYSICS_ASSEMBLER = new PhysicsAssemblerBlock(
             BlockBehaviour.Properties.of().strength(2.5F, 6.0F).noOcclusion());
@@ -27,7 +32,9 @@ public final class SimulatedFabricContent {
 
     public static void register() {
         registerItem("gyroscopic_mechanism", GYROSCOPIC_MECHANISM);
+        registerItem("incomplete_gyroscopic_mechanism", INCOMPLETE_GYROSCOPIC_MECHANISM);
         registerItem("engine_assembly", ENGINE_ASSEMBLY);
+        registerItem("incomplete_engine_assembly", INCOMPLETE_ENGINE_ASSEMBLY);
         registerBlockWithItem("physics_assembler", PHYSICS_ASSEMBLER);
 
         Registry.register(
