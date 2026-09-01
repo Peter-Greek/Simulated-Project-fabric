@@ -41,8 +41,20 @@ loom {
 
 processResources {
     inputs.property 'version', project.version
+
     filesMatching('fabric.mod.json') {
         expand version: project.version
+    }
+
+    // Pull only the upstream resources already proven useful for the current
+    // 1.20.1 milestone. Do not package the entire 1.21.1 resource tree yet.
+    from('../common/src/main/resources') {
+        include 'assets/simulated/models/block/physics_assembler/**'
+        include 'assets/simulated/textures/block/physics_assembler.png'
+    }
+    from('../common/src/generated/resources') {
+        include 'assets/simulated/blockstates/physics_assembler.json'
+        include 'assets/simulated/models/item/physics_assembler.json'
     }
 }
 
