@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fabric-homestead-1.20.1
+    paths-ignore:
+      - 'sable-backport/**'
+      - '.github/workflows/sable-1.20.1.yml'
 
 concurrency:
   group: fabric-homestead-1.20.1
