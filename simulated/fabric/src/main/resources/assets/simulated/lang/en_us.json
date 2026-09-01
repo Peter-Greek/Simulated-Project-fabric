@@ -1,5 +1,6 @@
 {
   "itemGroup.simulated.group": "Create Simulated",
+  "block.simulated.physics_assembler": "Physics Assembler",
   "item.simulated.gyroscopic_mechanism": "Gyroscopic Mechanism",
   "item.simulated.engine_assembly": "Engine Assembly"
 }
