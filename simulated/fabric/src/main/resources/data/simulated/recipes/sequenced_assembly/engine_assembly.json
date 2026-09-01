@@ -1,0 +1,63 @@
+{
+  "type": "create:sequenced_assembly",
+  "ingredient": {
+    "tag": "c:iron_plates"
+  },
+  "loops": 8,
+  "results": [
+    {
+      "chance": 50.0,
+      "item": "simulated:engine_assembly"
+    },
+    {
+      "chance": 16.0,
+      "item": "create:iron_sheet"
+    },
+    {
+      "chance": 15.0,
+      "item": "minecraft:iron_nugget"
+    },
+    {
+      "chance": 10.0,
+      "item": "create:industrial_iron_block"
+    },
+    {
+      "chance": 8.0,
+      "item": "minecraft:iron_bars"
+    },
+    {
+      "item": "minecraft:iron_helmet"
+    }
+  ],
+  "sequence": [
+    {
+      "type": "create:cutting",
+      "ingredients": [
+        {
+          "item": "simulated:incomplete_engine_assembly"
+        }
+      ],
+      "results": [
+        {
+          "item": "simulated:incomplete_engine_assembly"
+        }
+      ]
+    },
+    {
+      "type": "create:pressing",
+      "ingredients": [
+        {
+          "item": "simulated:incomplete_engine_assembly"
+        }
+      ],
+      "results": [
+        {
+          "item": "simulated:incomplete_engine_assembly"
+        }
+      ]
+    }
+  ],
+  "transitionalItem": {
+    "item": "simulated:incomplete_engine_assembly"
+  }
+}
