@@ -4,9 +4,10 @@ on:
   push:
     branches:
       - fabric-homestead-1.20.1
-  pull_request:
-    branches:
-      - main
+
+concurrency:
+  group: fabric-homestead-1.20.1
+  cancel-in-progress: true
 
 jobs:
   build:
