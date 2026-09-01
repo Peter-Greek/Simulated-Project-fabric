@@ -24,9 +24,9 @@ import net.minecraft.world.phys.BlockHitResult;
 /**
  * Minecraft 1.20.1 placement/state backport of the Physics Assembler block.
  *
- * The block entity is now present and persistent. Sable assembly hooks, Create
- * deployer behavior and the original hold interaction remain deferred until
- * their supporting 1.20.1 layers are available.
+ * The block now has a persistent block entity and a Create-aware structure
+ * discovery pass. Moving the discovered blocks into a Sable sub-level is the
+ * next stage of the backport.
  */
 public final class PhysicsAssemblerBlock extends Block implements EntityBlock {
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
@@ -69,15 +69,49 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock {
     @Override
     public InteractionResult use(final BlockState state, final Level level, final BlockPos pos,
                                  final Player player, final InteractionHand hand, final BlockHitResult hit) {
+        if (!player.getItemInHand(hand).isEmpty()) {
+            return InteractionResult.PASS;
+        }
+
         if (!level.isClientSide) {
             final BlockEntity blockEntity = level.getBlockEntity(pos);
             if (blockEntity instanceof final PhysicsAssemblerBlockEntity assembler) {
-                final int count = assembler.recordInteraction();
-                player.displayClientMessage(Component.literal(
-                        "Physics Assembler Fabric block entity active; persistent interaction count=" + count), false);
+                final int interactionCount = assembler.recordInteraction();
+                final Direction stickyFacing = getStickyFacing(state);
+                final BlockPos startPos = pos.relative(stickyFacing);
+                final FabricAssemblyScanner.ScanResult scan = FabricAssemblyScanner.scan(level, pos, startPos);
+
+                if (scan.successful()) {
+                    assembler.recordSuccessfulScan(scan.blocks().size());
+                    player.displayClientMessage(Component.literal(
+                            "Physics Assembler probe: " + scan.blocks().size()
+                                    + " block(s), bounds " + shortPos(scan.min())
+                                    + " -> " + shortPos(scan.max())
+                                    + "; interaction=" + interactionCount), false);
+                } else {
+                    assembler.recordFailedScan();
+                    player.displayClientMessage(Component.literal(
+                            "Physics Assembler probe failed: " + scan.error()
+                                    + " at " + shortPos(scan.problemPos())), false);
+                }
             }
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    public static Direction getStickyFacing(final BlockState state) {
+        return switch (state.getValue(FACE)) {
+            case FLOOR -> Direction.DOWN;
+            case CEILING -> Direction.UP;
+            case WALL -> state.getValue(FACING).getOpposite();
+        };
+    }
+
+    private static String shortPos(final BlockPos pos) {
+        if (pos == null) {
+            return "?";
+        }
+        return "[" + pos.getX() + "," + pos.getY() + "," + pos.getZ() + "]";
     }
 
     @Override
