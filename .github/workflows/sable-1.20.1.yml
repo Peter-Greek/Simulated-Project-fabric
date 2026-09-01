@@ -8,6 +8,10 @@ on:
       - 'sable-backport/**'
       - '.github/workflows/sable-1.20.1.yml'
 
+concurrency:
+  group: sable-homestead-1.20.1
+  cancel-in-progress: true
+
 jobs:
   companion:
     name: Backport Sable Companion
