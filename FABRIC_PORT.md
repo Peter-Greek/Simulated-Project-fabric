@@ -25,7 +25,19 @@ Do not update these versions independently without checking the Homestead pack f
 
 ## Current milestone
 
-The Fabric module is intentionally a loadable skeleton. It packages the existing common resources while keeping Java isolated from the NeoForge-backed `simulated/common` Gradle module. Java systems will be moved into the Fabric compilation set incrementally so compile failures remain attributable to one subsystem at a time.
+The Fabric loader/build/resource smoke test has passed inside the full Homestead pack. The temporary test block has now been removed from Java registration and the first upstream Simulated content IDs are being ported directly into the Fabric module.
+
+Currently ported:
+
+- `simulated:gyroscopic_mechanism`
+- `simulated:engine_assembly`
+- `simulated:group` creative tab
+- `/simulated status`
+- `/simulated give_core_items`
+
+These first items are intentionally simple loader-neutral registrations. Their upstream 1.21.1 implementations are ordinary ingredient items, making them a safe boundary before moving into Create-powered blocks, block entities, networking, and Sable-dependent physics.
+
+The 1.20.1 Fabric module continues to avoid compiling the NeoForge-backed `simulated/common` project directly. Source and resources are moved over subsystem-by-subsystem so compatibility failures remain attributable.
 
 ## Reference implementation
 
