@@ -1,0 +1,55 @@
+{
+  "type": "create:sequenced_assembly",
+  "ingredient": {
+    "tag": "c:iron_plates"
+  },
+  "loops": 3,
+  "results": [
+    {
+      "chance": 200.0,
+      "item": "simulated:gyroscopic_mechanism"
+    },
+    {
+      "chance": 2.0,
+      "item": "create:crushed_raw_iron"
+    },
+    {
+      "chance": 1.0,
+      "item": "minecraft:compass"
+    }
+  ],
+  "sequence": [
+    {
+      "type": "create:deploying",
+      "ingredients": [
+        {
+          "item": "simulated:incomplete_gyroscopic_mechanism"
+        },
+        {
+          "item": "create:shaft"
+        }
+      ],
+      "results": [
+        {
+          "item": "simulated:incomplete_gyroscopic_mechanism"
+        }
+      ]
+    },
+    {
+      "type": "create:pressing",
+      "ingredients": [
+        {
+          "item": "simulated:incomplete_gyroscopic_mechanism"
+        }
+      ],
+      "results": [
+        {
+          "item": "simulated:incomplete_gyroscopic_mechanism"
+        }
+      ]
+    }
+  ],
+  "transitionalItem": {
+    "item": "simulated:incomplete_gyroscopic_mechanism"
+  }
+}
