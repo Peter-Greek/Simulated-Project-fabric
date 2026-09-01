@@ -2,6 +2,7 @@ package dev.simulated_team.simulated.fabric;
 
 import com.simibubi.create.content.processing.sequenced.SequencedAssemblyItem;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlock;
+import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlockEntity;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -10,6 +11,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 
 /**
@@ -27,6 +29,9 @@ public final class SimulatedFabricContent {
     public static final PhysicsAssemblerBlock PHYSICS_ASSEMBLER = new PhysicsAssemblerBlock(
             BlockBehaviour.Properties.of().strength(2.5F, 6.0F).noOcclusion());
 
+    public static final BlockEntityType<PhysicsAssemblerBlockEntity> PHYSICS_ASSEMBLER_BLOCK_ENTITY =
+            BlockEntityType.Builder.of(PhysicsAssemblerBlockEntity::new, PHYSICS_ASSEMBLER).build(null);
+
     private SimulatedFabricContent() {
     }
 
@@ -36,6 +41,7 @@ public final class SimulatedFabricContent {
         registerItem("engine_assembly", ENGINE_ASSEMBLY);
         registerItem("incomplete_engine_assembly", INCOMPLETE_ENGINE_ASSEMBLY);
         registerBlockWithItem("physics_assembler", PHYSICS_ASSEMBLER);
+        Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, id("physics_assembler"), PHYSICS_ASSEMBLER_BLOCK_ENTITY);
 
         Registry.register(
                 BuiltInRegistries.CREATIVE_MODE_TAB,
