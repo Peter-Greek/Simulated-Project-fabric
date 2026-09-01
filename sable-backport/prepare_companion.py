@@ -56,6 +56,15 @@ dependencyResolutionManagement {
     encoding="utf-8",
 )
 
+# productionNamespace is a newer Loom API. Loom 1.8 already emits the remapped
+# output in the namespace expected by our 1.20.1 Fabric development build.
+common_build = root / "common" / "build.gradle.kts"
+common_text = common_build.read_text(encoding="utf-8")
+namespace_line = 'loom.productionNamespace = "named"\n\n'
+if namespace_line not in common_text:
+    raise SystemExit("expected productionNamespace setting not found")
+common_build.write_text(common_text.replace(namespace_line, ""), encoding="utf-8")
+
 # Loom 1.8 targets Gradle 8.10, whereas current Companion uses Gradle 9.4.
 wrapper = root / "gradle" / "wrapper" / "gradle-wrapper.properties"
 wrapper_text = wrapper.read_text(encoding="utf-8")
