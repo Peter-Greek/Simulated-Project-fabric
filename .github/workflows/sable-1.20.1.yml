@@ -1,0 +1,40 @@
+name: Sable 1.20.1 backport
+
+on:
+  push:
+    branches:
+      - fabric-homestead-1.20.1
+    paths:
+      - 'sable-backport/**'
+      - '.github/workflows/sable-1.20.1.yml'
+
+jobs:
+  companion:
+    name: Backport Sable Companion
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Clone pinned Sable Companion source
+        run: |
+          git clone https://github.com/ryanhcode/sable-companion.git .sable-companion
+          git -C .sable-companion checkout 652ecf0e051846f3a433dd20126dd4d64ec3793a
+
+      - name: Apply 1.20.1 build transform
+        run: python3 sable-backport/prepare_companion.py .sable-companion
+
+      - name: Build Sable Companion Fabric 1.20.1
+        working-directory: .sable-companion
+        run: ./gradlew :fabric:build --stacktrace --no-daemon
+
+      - name: Upload Sable Companion test jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: sable-companion-fabric-1.20.1-test
+          path: .sable-companion/fabric/build/libs/*.jar
+          if-no-files-found: error
