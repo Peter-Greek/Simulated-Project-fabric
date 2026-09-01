@@ -30,7 +30,7 @@ jobs:
 
       - name: Build Sable Companion Fabric 1.20.1
         working-directory: .sable-companion
-        run: ./gradlew :fabric:build --stacktrace --no-daemon
+        run: ./gradlew :sable-companion-fabric:build --stacktrace --no-daemon
 
       - name: Upload Sable Companion test jar
         uses: actions/upload-artifact@v4
