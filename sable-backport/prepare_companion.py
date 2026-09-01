@@ -65,6 +65,14 @@ if namespace_line not in common_text:
     raise SystemExit("expected productionNamespace setting not found")
 common_build.write_text(common_text.replace(namespace_line, ""), encoding="utf-8")
 
+# Companion currently targets Java 21 and uses SequencedCollection's getFirst().
+# Every occurrence is on a codec list whose required size has just been checked,
+# so Java 17's ordinary index access has identical semantics here.
+for java_file in (root / "common" / "src" / "main" / "java").rglob("*.java"):
+    java_text = java_file.read_text(encoding="utf-8")
+    if ".getFirst()" in java_text:
+        java_file.write_text(java_text.replace(".getFirst()", ".get(0)"), encoding="utf-8")
+
 # Loom 1.8 targets Gradle 8.10, whereas current Companion uses Gradle 9.4.
 wrapper = root / "gradle" / "wrapper" / "gradle-wrapper.properties"
 wrapper_text = wrapper.read_text(encoding="utf-8")
