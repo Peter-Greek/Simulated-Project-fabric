@@ -46,6 +46,14 @@ public final class SimulatedFabric implements ModInitializer {
                             context.getSource().sendSuccess(() -> Component.literal(
                                     "Gave the first ported Simulated items"), false);
                             return 1;
+                        }))
+                .then(Commands.literal("give_physics_assembler")
+                        .requires(source -> source.hasPermission(2))
+                        .executes(context -> {
+                            give(context.getSource(), new ItemStack(SimulatedFabricContent.PHYSICS_ASSEMBLER));
+                            context.getSource().sendSuccess(() -> Component.literal(
+                                    "Gave Physics Assembler placement-shell test block"), false);
+                            return 1;
                         })));
     }
 
