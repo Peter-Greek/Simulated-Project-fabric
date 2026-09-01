@@ -46,11 +46,16 @@ processResources {
         expand version: project.version
     }
 
-    // Pull only the upstream resources already proven useful for the current
-    // 1.20.1 milestone. Do not package the entire 1.21.1 resource tree yet.
+    // Pull only upstream resources that have been explicitly backported or
+    // validated for the current 1.20.1 milestone. Do not package the complete
+    // 1.21.1 resource tree.
     from('../common/src/main/resources') {
         include 'assets/simulated/models/block/physics_assembler/**'
         include 'assets/simulated/textures/block/physics_assembler.png'
+        include 'assets/simulated/textures/item/gyroscopic_mechanism.png'
+        include 'assets/simulated/textures/item/incomplete_gyroscopic_mechanism.png'
+        include 'assets/simulated/textures/item/engine_assembly.png'
+        include 'assets/simulated/textures/item/incomplete_engine_assembly.png'
     }
     from('../common/src/generated/resources') {
         include 'assets/simulated/blockstates/physics_assembler.json'
