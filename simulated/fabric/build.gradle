@@ -46,11 +46,10 @@ loom {
 
 sourceSets {
     main {
-        // During the backport we keep Fabric-specific Java isolated while reusing
-        // assets/data from the upstream common project. NeoForge metadata is excluded.
+        // Gradle already includes src/main/resources by default. Only add the
+        // upstream common resource tree here so fabric.mod.json is copied once.
         resources {
             srcDir '../common/src/main/resources'
-            srcDir 'src/main/resources'
             exclude 'META-INF/**'
         }
     }
