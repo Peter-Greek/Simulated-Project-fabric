@@ -21,6 +21,41 @@ for old, new in replacements.items():
     text = text.replace(old, new)
 versions.write_text(text, encoding="utf-8")
 
+# Current Companion dynamically discovers subprojects with a Kotlin DSL idiom
+# that no longer type-infers cleanly after moving the build back to Gradle 8.
+# The backport only needs the common and Fabric projects, so make that explicit.
+settings = root / "settings.gradle.kts"
+settings.write_text(
+    '''pluginManagement {
+    repositories {
+        mavenCentral()
+        maven("https://maven.fabricmc.net")
+        gradlePluginPortal()
+    }
+}
+
+val modName = "sable-companion"
+rootProject.name = modName
+
+includeBuild("build-logic")
+
+include(":sable-companion-common")
+project(":sable-companion-common").projectDir = file("common")
+
+include(":sable-companion-fabric")
+project(":sable-companion-fabric").projectDir = file("fabric")
+
+dependencyResolutionManagement {
+    versionCatalogs {
+        create("libs") {
+            from(files("./libs.versions.toml"))
+        }
+    }
+}
+''',
+    encoding="utf-8",
+)
+
 # Loom 1.8 targets Gradle 8.10, whereas current Companion uses Gradle 9.4.
 wrapper = root / "gradle" / "wrapper" / "gradle-wrapper.properties"
 wrapper_text = wrapper.read_text(encoding="utf-8")
