@@ -6,6 +6,8 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.UUID;
+
 /**
  * 1.20.1 Physics Assembler block entity.
  *
@@ -36,8 +38,24 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity {
     private PreparedAssembly preparedAssembly;
     private String lastError = "";
 
+    // Client input can occasionally reach 1.20.1 block use through more than
+    // one hand/path during the same tick. This is intentionally transient: it
+    // only prevents one physical click from advancing the test state twice.
+    private long lastProcessedGameTime = Long.MIN_VALUE;
+    private UUID lastProcessedPlayer;
+
     public PhysicsAssemblerBlockEntity(final BlockPos pos, final BlockState state) {
         super(SimulatedFabricContent.PHYSICS_ASSEMBLER_BLOCK_ENTITY, pos, state);
+    }
+
+    public boolean tryBeginInteraction(final long gameTime, final UUID playerId) {
+        if (gameTime == lastProcessedGameTime && playerId.equals(lastProcessedPlayer)) {
+            return false;
+        }
+
+        lastProcessedGameTime = gameTime;
+        lastProcessedPlayer = playerId;
+        return true;
     }
 
     public int recordInteraction() {
