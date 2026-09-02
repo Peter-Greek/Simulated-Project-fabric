@@ -16,6 +16,10 @@ public record PreparedAssembly(int blockCount,
                                BlockPos max,
                                BlockPos startPos,
                                Direction stickyFacing,
+                               int blockEntityCount,
+                               int superGlueSheetCount,
+                               int fluidBlockCount,
+                               int controlledContraptionCount,
                                long signature) {
     private static final long MIX_A = 0x9E3779B97F4A7C15L;
     private static final long MIX_B = 0xC2B2AE3D27D4EB4FL;
@@ -23,14 +27,25 @@ public record PreparedAssembly(int blockCount,
     public static PreparedAssembly capture(final Level level,
                                            final BlockPos startPos,
                                            final Direction stickyFacing,
-                                           final FabricAssemblyScanner.ScanResult scan) {
+                                           final FabricAssemblyScanner.ScanResult scan,
+                                           final FabricAssemblyPlan plan) {
+        long signature = fingerprint(level, scan.blocks());
+        signature ^= Long.rotateLeft(plan.glueSignature(), 11);
+        signature ^= Long.rotateLeft((long) plan.blockEntityCount() * MIX_A, 19);
+        signature ^= Long.rotateLeft((long) plan.fluidBlockCount() * MIX_B, 31);
+        signature ^= Long.rotateLeft((long) plan.controlledContraptionCount() * MIX_A, 43);
+
         return new PreparedAssembly(
                 scan.blocks().size(),
                 scan.min().immutable(),
                 scan.max().immutable(),
                 startPos.immutable(),
                 stickyFacing,
-                fingerprint(level, scan.blocks()));
+                plan.blockEntityCount(),
+                plan.superGlueSheetCount(),
+                plan.fluidBlockCount(),
+                plan.controlledContraptionCount(),
+                signature);
     }
 
     public int sizeX() {
@@ -49,6 +64,13 @@ public record PreparedAssembly(int blockCount,
         return sizeX() + "x" + sizeY() + "x" + sizeZ();
     }
 
+    public String preflightSummary() {
+        return "blockEntities=" + blockEntityCount
+                + ", glueSheets=" + superGlueSheetCount
+                + ", fluidBlocks=" + fluidBlockCount
+                + ", createContraptions=" + controlledContraptionCount;
+    }
+
     public CompoundTag write() {
         final CompoundTag tag = new CompoundTag();
         tag.putInt("BlockCount", blockCount);
@@ -56,6 +78,10 @@ public record PreparedAssembly(int blockCount,
         tag.putLong("Max", max.asLong());
         tag.putLong("StartPos", startPos.asLong());
         tag.putInt("StickyFacing", stickyFacing.get3DDataValue());
+        tag.putInt("BlockEntityCount", blockEntityCount);
+        tag.putInt("SuperGlueSheetCount", superGlueSheetCount);
+        tag.putInt("FluidBlockCount", fluidBlockCount);
+        tag.putInt("ControlledContraptionCount", controlledContraptionCount);
         tag.putLong("Signature", signature);
         return tag;
     }
@@ -67,6 +93,10 @@ public record PreparedAssembly(int blockCount,
                 BlockPos.of(tag.getLong("Max")),
                 BlockPos.of(tag.getLong("StartPos")),
                 Direction.from3DDataValue(tag.getInt("StickyFacing")),
+                tag.getInt("BlockEntityCount"),
+                tag.getInt("SuperGlueSheetCount"),
+                tag.getInt("FluidBlockCount"),
+                tag.getInt("ControlledContraptionCount"),
                 tag.getLong("Signature"));
     }
 
