@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Prepare pinned Sable 2.0.4 for a Fabric 1.20.1 / Java 17 compile probe.
+"""Prepare pinned Sable 2.0.4 for a Fabric 1.20.1 / Java 17 core compile probe.
 
-This intentionally rewrites only the build shell. Source-level 1.21 -> 1.20.1
-backports are added here incrementally as CI exposes them. Keeping the transform
-reproducible lets us stay pinned to the exact Sable generation Simulated 1.3.2
-expects instead of maintaining a large copied third-party tree in this fork.
+The backport deliberately starts with the server/headless sublevel and physics
+core. 1.21-only client rendering, optional integrations and mixins are excluded
+from this probe so CI reports the API delta that actually blocks Simulated's
+assembly handoff instead of stopping on unrelated renderer compatibility code.
 """
 
 from __future__ import annotations
@@ -32,8 +32,7 @@ def replace(rel: str, old: str, new: str) -> None:
     path.write_text(text.replace(old, new), encoding="utf-8")
 
 
-# Gradle 9 + Loom 1.16 are for the current 1.21 build. Match the known-good
-# toolchain already used by the Homestead Simulated port.
+# Match the known-good Gradle/Loom/Java stack already used by the Homestead port.
 replace(
     "gradle/wrapper/gradle-wrapper.properties",
     "gradle-9.5.0-bin.zip",
@@ -48,9 +47,6 @@ write(
 """,
 )
 
-# Fabric-only backport lane. The common project remains only as a source/resource
-# provider; it is compiled through Loom in the Fabric project so we do not need
-# NeoForge ModDev just to obtain Mojang classes.
 write(
     "settings.gradle",
     """pluginManagement {
@@ -80,9 +76,6 @@ for pattern, value in replacements.items():
         raise RuntimeError(f"expected one property match for {pattern}, got {count}")
 (ROOT / "gradle.properties").write_text(props, encoding="utf-8")
 
-# Strip 1.21 compatibility dependencies from the shared convention for the
-# first core compile. We will add back 1.20.1 equivalents only when a retained
-# source package actually requires them.
 write(
     "buildSrc/src/main/groovy/multiloader-common.gradle",
     """plugins {
@@ -178,9 +171,9 @@ if not companion_jars:
     raise RuntimeError(f"No non-sources Sable Companion jar found under {LIBS}")
 companion = companion_jars[0].as_posix()
 
-# First source probe deliberately leaves Rapier nesting and Veil/client-only
-# dependencies out. The goal is to expose the Java API delta in Sable's core
-# against 1.20.1 before native/runtime packaging is attempted.
+# This is a headless compile probe, not the final runtime jar. Renderer/client
+# code and optional compatibility are intentionally deferred until the server
+# sublevel/physics core compiles on 1.20.1.
 write(
     "fabric/build.gradle",
     f"""plugins {{
@@ -201,6 +194,8 @@ dependencies {{
     mappings loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${{fabric_loader_version}}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${{fabric_version}}"
+    modImplementation "fuzs.forgeconfigapiport:forgeconfigapiport-fabric:8.0.3"
+    implementation "org.apache.maven:maven-artifact:3.8.5"
     modImplementation files('{companion}')
 }}
 
@@ -217,15 +212,34 @@ java {{
 
 tasks.withType(JavaCompile).configureEach {{
     options.release = 17
+
+    // Defer 1.21 renderer, client hooks, mixins and third-party integrations.
+    // Keeping them out of this probe exposes the core sublevel/physics delta.
+    exclude 'dev/ryanhcode/sable/mixin/**'
+    exclude 'dev/ryanhcode/sable/sublevel/render/**'
+    exclude 'dev/ryanhcode/sable/debug/**'
+    exclude 'dev/ryanhcode/sable/compatibility/**'
+    exclude 'dev/ryanhcode/sable/SableClient.java'
+    exclude 'dev/ryanhcode/sable/SableClientConfig.java'
+    exclude 'dev/ryanhcode/sable/fabric/**'
 }}
 """,
 )
 
-# Java 21 collection convenience methods have direct Java 17 equivalents.
+# Straightforward source-level compatibility rewrites that preserve semantics.
 for path in ROOT.rglob("*.java"):
     text = path.read_text(encoding="utf-8")
     changed = text.replace(".getFirst()", ".get(0)")
+    changed = changed.replace(
+        "net.minecraft.world.level.chunk.status.ChunkStatus",
+        "net.minecraft.world.level.chunk.ChunkStatus",
+    )
+    changed = changed.replace(
+        "net.neoforged.neoforge.common.ModConfigSpec",
+        "net.minecraftforge.common.ForgeConfigSpec",
+    )
+    changed = changed.replace("ModConfigSpec", "ForgeConfigSpec")
     if changed != text:
         path.write_text(changed, encoding="utf-8")
 
-print(f"Prepared Sable {ROOT} for Fabric 1.20.1 core compile using {companion}")
+print(f"Prepared Sable {ROOT} for Fabric 1.20.1 headless core compile using {companion}")
