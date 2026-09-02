@@ -15,12 +15,17 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 /**
  * Fabric bootstrap for the Minecraft 1.20.1 / Homestead port.
@@ -62,7 +67,9 @@ public final class SimulatedFabric implements ModInitializer {
                                             + modVersion("sodium") + "; "
                                             + modVersion("iris") + "; "
                                             + modVersion("indium") + "; "
-                                            + modVersion("kubejs")), false);
+                                            + modVersion("kubejs") + "; "
+                                            + modVersion("sable") + "; "
+                                            + modVersion("sable_companion")), false);
                             return 1;
                         }))
                 .then(Commands.literal("assembler_state")
@@ -77,6 +84,13 @@ public final class SimulatedFabric implements ModInitializer {
                         .executes(context -> runTargetedAssemblerPreflight(context.getSource()))
                         .then(Commands.argument("pos", BlockPosArgument.blockPos())
                                 .executes(context -> runAssemblerPreflight(
+                                        context.getSource(),
+                                        BlockPosArgument.getLoadedBlockPos(context, "pos")))))
+                .then(Commands.literal("assembler_manifest")
+                        .requires(source -> source.hasPermission(2))
+                        .executes(context -> runTargetedAssemblerManifest(context.getSource()))
+                        .then(Commands.argument("pos", BlockPosArgument.blockPos())
+                                .executes(context -> runAssemblerManifest(
                                         context.getSource(),
                                         BlockPosArgument.getLoadedBlockPos(context, "pos")))))
                 .then(Commands.literal("give_core_items")
@@ -114,6 +128,15 @@ public final class SimulatedFabric implements ModInitializer {
             return 0;
         }
         return runAssemblerPreflight(source, pos);
+    }
+
+    private static int runTargetedAssemblerManifest(final CommandSourceStack source) throws CommandSyntaxException {
+        final BlockPos pos = targetedBlockPos(source);
+        if (pos == null) {
+            source.sendFailure(Component.literal("Look directly at a Physics Assembler within 8 blocks, or supply coordinates."));
+            return 0;
+        }
+        return runAssemblerManifest(source, pos);
     }
 
     private static BlockPos targetedBlockPos(final CommandSourceStack source) throws CommandSyntaxException {
@@ -190,11 +213,86 @@ public final class SimulatedFabric implements ModInitializer {
                         + ", " + live.preflightSummary()
                         + ", signature=" + Long.toUnsignedString(live.signature(), 16)
                         + ", matchesSaved=" + matchesSaved
+                        + (matchesSaved ? "" : ", changed=" + snapshotDiff(saved, live))
                         + (plan.hasDeferredCreateContraptions()
                                 ? ", WARNING=intersecting moving Create contraption expansion is not ported yet"
                                 : "")
                         + ". Saved assembler state was not changed."), false);
         return 1;
+    }
+
+    private static int runAssemblerManifest(final CommandSourceStack source, final BlockPos pos) {
+        final var level = source.getLevel();
+        final var state = level.getBlockState(pos);
+        if (!state.is(SimulatedFabricContent.PHYSICS_ASSEMBLER)) {
+            source.sendFailure(Component.literal("No Physics Assembler at " + shortPos(pos)));
+            return 0;
+        }
+
+        final Direction stickyFacing = PhysicsAssemblerBlock.getStickyFacing(state);
+        final BlockPos startPos = pos.relative(stickyFacing);
+        final FabricAssemblyScanner.ScanResult scan = FabricAssemblyScanner.scan(level, pos, startPos);
+        if (!scan.successful()) {
+            source.sendFailure(Component.literal(
+                    "Manifest scan failed: " + scan.error() + " at " + shortPos(scan.problemPos())));
+            return 0;
+        }
+
+        final Map<String, Integer> blockCounts = new TreeMap<>();
+        int blockEntities = 0;
+        for (final BlockPos blockPos : scan.blocks()) {
+            final var blockState = level.getBlockState(blockPos);
+            final String blockId = BuiltInRegistries.BLOCK.getKey(blockState.getBlock()).toString();
+            blockCounts.merge(blockId, 1, Integer::sum);
+            if (level.getBlockEntity(blockPos) != null) {
+                blockEntities++;
+            }
+        }
+
+        final int distinctTypes = blockCounts.size();
+        final String types = blockCounts.entrySet().stream()
+                .limit(12)
+                .map(entry -> entry.getKey() + " x" + entry.getValue())
+                .collect(Collectors.joining(", "));
+        final String omitted = distinctTypes > 12 ? ", +" + (distinctTypes - 12) + " more type(s)" : "";
+        final int finalBlockEntities = blockEntities;
+        source.sendSuccess(() -> Component.literal(
+                "Assembly manifest " + shortPos(pos)
+                        + ": sticky=" + stickyFacing
+                        + ", seed=" + shortPos(startPos)
+                        + ", blocks=" + scan.blocks().size()
+                        + ", blockEntities=" + finalBlockEntities
+                        + ", glueSheets=" + scan.glues().size()
+                        + ", types={" + types + omitted + "}"), false);
+        return 1;
+    }
+
+    private static String snapshotDiff(final PreparedAssembly saved, final PreparedAssembly live) {
+        if (saved == null) {
+            return "no saved snapshot";
+        }
+
+        final StringBuilder changed = new StringBuilder();
+        appendChange(changed, saved.blockCount() != live.blockCount(), "blocks");
+        appendChange(changed, saved.blockEntityCount() != live.blockEntityCount(), "blockEntities");
+        appendChange(changed, saved.superGlueSheetCount() != live.superGlueSheetCount(), "glueSheets");
+        appendChange(changed, saved.fluidBlockCount() != live.fluidBlockCount(), "fluids");
+        appendChange(changed, saved.controlledContraptionCount() != live.controlledContraptionCount(), "contraptions");
+        appendChange(changed, saved.stickyFacing() != live.stickyFacing(), "stickyFace");
+        appendChange(changed, !saved.startPos().equals(live.startPos()), "seed");
+        appendChange(changed, !saved.min().equals(live.min()) || !saved.max().equals(live.max()), "bounds");
+        appendChange(changed, saved.signature() != live.signature(), "signature");
+        return changed.length() == 0 ? "unknown metadata difference" : changed.toString();
+    }
+
+    private static void appendChange(final StringBuilder builder, final boolean changed, final String name) {
+        if (!changed) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append('+');
+        }
+        builder.append(name);
     }
 
     private static void give(final CommandSourceStack source, final ItemStack stack) throws CommandSyntaxException {
