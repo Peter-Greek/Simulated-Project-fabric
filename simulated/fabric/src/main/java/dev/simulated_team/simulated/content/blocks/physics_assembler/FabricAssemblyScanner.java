@@ -139,7 +139,7 @@ public final class FabricAssemblyScanner {
             }
         }
 
-        return ScanResult.success(blocks, min, max);
+        return ScanResult.success(blocks, glueCache, min, max);
     }
 
     private static boolean isConnected(final Level level,
@@ -213,16 +213,20 @@ public final class FabricAssemblyScanner {
 
     public record ScanResult(boolean successful,
                              Set<BlockPos> blocks,
+                             Set<SuperGlueEntity> glues,
                              BlockPos min,
                              BlockPos max,
                              String error,
                              BlockPos problemPos) {
-        private static ScanResult success(final Set<BlockPos> blocks, final BlockPos min, final BlockPos max) {
-            return new ScanResult(true, Set.copyOf(blocks), min, max, null, null);
+        private static ScanResult success(final Set<BlockPos> blocks,
+                                          final Set<SuperGlueEntity> glues,
+                                          final BlockPos min,
+                                          final BlockPos max) {
+            return new ScanResult(true, Set.copyOf(blocks), Set.copyOf(glues), min, max, null, null);
         }
 
         private static ScanResult failure(final String error, final BlockPos problemPos) {
-            return new ScanResult(false, Set.of(), null, null, error, problemPos.immutable());
+            return new ScanResult(false, Set.of(), Set.of(), null, null, error, problemPos.immutable());
         }
     }
 }
