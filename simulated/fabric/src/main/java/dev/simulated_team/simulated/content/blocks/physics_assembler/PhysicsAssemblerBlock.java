@@ -127,7 +127,9 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
 
                     player.displayClientMessage(Component.literal(
                             "Physics Assembler " + verb + ": " + snapshot.blockCount()
-                                    + " block(s), bounds " + shortPos(snapshot.min())
+                                    + " block(s), sticky=" + snapshot.stickyFacing()
+                                    + ", seed=" + shortPos(snapshot.startPos())
+                                    + ", bounds " + shortPos(snapshot.min())
                                     + " -> " + shortPos(snapshot.max())
                                     + ", size=" + snapshot.dimensions()
                                     + "; preflight: " + plan.summary()
