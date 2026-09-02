@@ -1,6 +1,7 @@
 package dev.simulated_team.simulated.fabric;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.FabricAssemblyPlan;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.FabricAssemblyScanner;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlock;
@@ -16,6 +17,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,12 +67,14 @@ public final class SimulatedFabric implements ModInitializer {
                         }))
                 .then(Commands.literal("assembler_state")
                         .requires(source -> source.hasPermission(2))
+                        .executes(context -> reportTargetedAssemblerState(context.getSource()))
                         .then(Commands.argument("pos", BlockPosArgument.blockPos())
                                 .executes(context -> reportAssemblerState(
                                         context.getSource(),
                                         BlockPosArgument.getLoadedBlockPos(context, "pos")))))
                 .then(Commands.literal("assembler_preflight")
                         .requires(source -> source.hasPermission(2))
+                        .executes(context -> runTargetedAssemblerPreflight(context.getSource()))
                         .then(Commands.argument("pos", BlockPosArgument.blockPos())
                                 .executes(context -> runAssemblerPreflight(
                                         context.getSource(),
@@ -91,6 +96,37 @@ public final class SimulatedFabric implements ModInitializer {
                                     "Gave Physics Assembler"), false);
                             return 1;
                         })));
+    }
+
+    private static int reportTargetedAssemblerState(final CommandSourceStack source) throws CommandSyntaxException {
+        final BlockPos pos = targetedBlockPos(source);
+        if (pos == null) {
+            source.sendFailure(Component.literal("Look directly at a Physics Assembler within 8 blocks, or supply coordinates."));
+            return 0;
+        }
+        return reportAssemblerState(source, pos);
+    }
+
+    private static int runTargetedAssemblerPreflight(final CommandSourceStack source) throws CommandSyntaxException {
+        final BlockPos pos = targetedBlockPos(source);
+        if (pos == null) {
+            source.sendFailure(Component.literal("Look directly at a Physics Assembler within 8 blocks, or supply coordinates."));
+            return 0;
+        }
+        return runAssemblerPreflight(source, pos);
+    }
+
+    private static BlockPos targetedBlockPos(final CommandSourceStack source) throws CommandSyntaxException {
+        final var player = source.getPlayerOrException();
+        final HitResult hit = player.pick(8.0D, 0.0F, false);
+        if (hit.getType() != HitResult.Type.BLOCK) {
+            return null;
+        }
+
+        final BlockPos pos = ((BlockHitResult) hit).getBlockPos();
+        return source.getLevel().getBlockState(pos).is(SimulatedFabricContent.PHYSICS_ASSEMBLER)
+                ? pos
+                : null;
     }
 
     private static int reportAssemblerState(final CommandSourceStack source, final BlockPos pos) {
@@ -157,7 +193,7 @@ public final class SimulatedFabric implements ModInitializer {
         return 1;
     }
 
-    private static void give(final CommandSourceStack source, final ItemStack stack) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+    private static void give(final CommandSourceStack source, final ItemStack stack) throws CommandSyntaxException {
         final var player = source.getPlayerOrException();
         if (!player.getInventory().add(stack)) {
             player.drop(stack, false);
