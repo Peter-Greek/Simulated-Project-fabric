@@ -40,7 +40,22 @@ public final class SimulatedFabric implements ModInitializer {
                             final boolean createLoaded = FabricLoader.getInstance().isModLoaded("create");
                             context.getSource().sendSuccess(() -> Component.literal(
                                     "Create: Simulated Fabric port loaded. Create=" + createLoaded
-                                            + "; assembler scanner/preparation lifecycle enabled; Sable physics handoff not enabled yet."), false);
+                                            + "; scanner + persistent preflight lifecycle enabled; Sable physics handoff not enabled yet."), false);
+                            return 1;
+                        }))
+                .then(Commands.literal("compatibility")
+                        .executes(context -> {
+                            context.getSource().sendSuccess(() -> Component.literal(
+                                    "Homestead runtime: "
+                                            + modVersion("fabricloader") + "; "
+                                            + modVersion("fabric-api") + "; "
+                                            + modVersion("create") + "; "
+                                            + modVersion("flywheel") + "; "
+                                            + modVersion("jei") + "; "
+                                            + modVersion("sodium") + "; "
+                                            + modVersion("iris") + "; "
+                                            + modVersion("indium") + "; "
+                                            + modVersion("kubejs")), false);
                             return 1;
                         }))
                 .then(Commands.literal("assembler_state")
@@ -60,6 +75,7 @@ public final class SimulatedFabric implements ModInitializer {
                                             ? "none"
                                             : prepared.blockCount() + " blocks, " + prepared.dimensions()
                                                     + ", bounds " + shortPos(prepared.min()) + " -> " + shortPos(prepared.max())
+                                                    + ", " + prepared.preflightSummary()
                                                     + ", signature=" + Long.toUnsignedString(prepared.signature(), 16);
                                     context.getSource().sendSuccess(() -> Component.literal(
                                             "Physics Assembler " + shortPos(pos)
@@ -96,6 +112,12 @@ public final class SimulatedFabric implements ModInitializer {
         if (!player.getInventory().add(stack)) {
             player.drop(stack, false);
         }
+    }
+
+    private static String modVersion(final String modId) {
+        return FabricLoader.getInstance().getModContainer(modId)
+                .map(container -> modId + "=" + container.getMetadata().getVersion().getFriendlyString())
+                .orElse(modId + "=not-loaded");
     }
 
     private static String shortPos(final BlockPos pos) {
