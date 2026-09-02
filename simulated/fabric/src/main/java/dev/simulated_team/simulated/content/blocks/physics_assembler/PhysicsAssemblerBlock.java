@@ -11,7 +11,10 @@ import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
@@ -62,9 +65,38 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
             facing = clickedFace;
         }
 
-        return defaultBlockState()
+        final BlockState state = defaultBlockState()
                 .setValue(FACE, attachFace)
                 .setValue(FACING, facing);
+        return state.canSurvive(context.getLevel(), context.getClickedPos()) ? state : null;
+    }
+
+    /**
+     * Upstream PhysicsAssemblerBlock extends FaceAttachedHorizontalDirectionalBlock.
+     * Reproduce its support rule explicitly on 1.20.1: the assembler must have a
+     * solid support face on the same side that seeds the assembly.
+     */
+    @Override
+    public boolean canSurvive(final BlockState state, final LevelReader level, final BlockPos pos) {
+        final Direction supportDirection = getStickyFacing(state);
+        final BlockPos supportPos = pos.relative(supportDirection);
+        return !level.getBlockState(supportPos)
+                .getBlockSupportShape(level, supportPos)
+                .getFaceShape(supportDirection.getOpposite())
+                .isEmpty();
+    }
+
+    @Override
+    public BlockState updateShape(final BlockState state,
+                                  final Direction direction,
+                                  final BlockState neighborState,
+                                  final LevelAccessor level,
+                                  final BlockPos pos,
+                                  final BlockPos neighborPos) {
+        if (direction == getStickyFacing(state) && !state.canSurvive(level, pos)) {
+            return Blocks.AIR.defaultBlockState();
+        }
+        return super.updateShape(state, direction, neighborState, level, pos, neighborPos);
     }
 
     @Override
