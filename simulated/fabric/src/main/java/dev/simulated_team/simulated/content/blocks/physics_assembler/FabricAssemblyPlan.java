@@ -47,13 +47,10 @@ public record FabricAssemblyPlan(int blockCount,
                 scan.min().getX(), scan.min().getY(), scan.min().getZ(),
                 scan.max().getX() + 1.0, scan.max().getY() + 1.0, scan.max().getZ() + 1.0);
 
-        final List<SuperGlueEntity> relevantGlues = new ArrayList<>();
-        for (final SuperGlueEntity glue : level.getEntitiesOfClass(
-                SuperGlueEntity.class, bounds.inflate(2.0))) {
-            if (containsAny(glue, blocks)) {
-                relevantGlues.add(glue);
-            }
-        }
+        // The scanner only caches glue that actually connected two visited
+        // positions, matching upstream SimAssemblyContraption#getGlues much more
+        // closely than rediscovering every glue entity near the bounding box.
+        final List<SuperGlueEntity> relevantGlues = new ArrayList<>(scan.glues());
 
         // Make the signature independent of entity iteration order.
         relevantGlues.sort(Comparator.comparing(FabricAssemblyPlan::boundsKey));
@@ -92,15 +89,6 @@ public record FabricAssemblyPlan(int blockCount,
                 + ", glueSheets=" + superGlueSheetCount
                 + ", fluidBlocks=" + fluidBlockCount
                 + ", createContraptions=" + controlledContraptionCount;
-    }
-
-    private static boolean containsAny(final SuperGlueEntity glue, final Set<BlockPos> blocks) {
-        for (final BlockPos pos : blocks) {
-            if (glue.contains(pos)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static String boundsKey(final SuperGlueEntity glue) {
