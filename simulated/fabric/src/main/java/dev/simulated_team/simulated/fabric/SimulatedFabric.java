@@ -139,7 +139,9 @@ public final class SimulatedFabric implements ModInitializer {
         final PreparedAssembly prepared = assembler.getPreparedAssembly();
         final String snapshot = prepared == null
                 ? "none"
-                : prepared.blockCount() + " blocks, " + prepared.dimensions()
+                : prepared.blockCount() + " blocks, sticky=" + prepared.stickyFacing()
+                        + ", seed=" + shortPos(prepared.startPos())
+                        + ", " + prepared.dimensions()
                         + ", bounds " + shortPos(prepared.min()) + " -> " + shortPos(prepared.max())
                         + ", " + prepared.preflightSummary()
                         + ", signature=" + Long.toUnsignedString(prepared.signature(), 16);
@@ -181,7 +183,9 @@ public final class SimulatedFabric implements ModInitializer {
         final boolean matchesSaved = live.equals(saved);
         source.sendSuccess(() -> Component.literal(
                 "Read-only preflight " + shortPos(pos)
-                        + ": " + live.blockCount() + " blocks, size=" + live.dimensions()
+                        + ": " + live.blockCount() + " blocks, sticky=" + live.stickyFacing()
+                        + ", seed=" + shortPos(live.startPos())
+                        + ", size=" + live.dimensions()
                         + ", bounds " + shortPos(live.min()) + " -> " + shortPos(live.max())
                         + ", " + live.preflightSummary()
                         + ", signature=" + Long.toUnsignedString(live.signature(), 16)
