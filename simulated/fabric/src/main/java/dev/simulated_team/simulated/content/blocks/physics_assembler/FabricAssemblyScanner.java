@@ -15,14 +15,41 @@ import java.util.Queue;
 import java.util.Set;
 
 /**
- * First 1.20.1 backport of Simulated's structure-discovery stage.
+ * Minecraft 1.20.1 backport of Simulated's structure-discovery stage.
  *
  * This deliberately stops before moving blocks into a Sable sub-level. It lets
- * us validate Create movement checks, super glue and sticky attachments against
+ * us validate Create movement checks, Super Glue and sticky attachments against
  * the Homestead stack independently from the physics backport.
  */
 public final class FabricAssemblyScanner {
     private static final int MAX_BLOCKS = 128_000;
+
+    /**
+     * Matches the neighborhood used by upstream SimAssemblyContraption. The
+     * twelve edge-diagonal offsets matter for Super Glue sheets: one glue entity
+     * can contain blocks which are not face-adjacent to the block currently
+     * being visited.
+     */
+    private static final BlockPos[] DIRECTION_OFFSETS = new BlockPos[]{
+            new BlockPos(1, 0, 0),
+            new BlockPos(-1, 0, 0),
+            new BlockPos(0, 1, 0),
+            new BlockPos(0, -1, 0),
+            new BlockPos(0, 0, 1),
+            new BlockPos(0, 0, -1),
+            new BlockPos(1, 1, 0),
+            new BlockPos(-1, -1, 0),
+            new BlockPos(1, -1, 0),
+            new BlockPos(-1, 1, 0),
+            new BlockPos(1, 0, 1),
+            new BlockPos(-1, 0, -1),
+            new BlockPos(1, 0, -1),
+            new BlockPos(-1, 0, 1),
+            new BlockPos(0, 1, 1),
+            new BlockPos(0, -1, -1),
+            new BlockPos(0, -1, 1),
+            new BlockPos(0, 1, -1)
+    };
 
     private FabricAssemblyScanner() {
     }
@@ -81,8 +108,8 @@ public final class FabricAssemblyScanner {
                     Math.max(max.getY(), pos.getY()),
                     Math.max(max.getZ(), pos.getZ()));
 
-            for (final Direction direction : Direction.values()) {
-                final BlockPos neighborPos = pos.relative(direction);
+            for (final BlockPos offset : DIRECTION_OFFSETS) {
+                final BlockPos neighborPos = pos.offset(offset);
                 if (neighborPos.equals(assemblerPos) || queued.contains(neighborPos)) {
                     continue;
                 }
@@ -100,7 +127,12 @@ public final class FabricAssemblyScanner {
                     continue;
                 }
 
-                if (isConnected(level, pos, state, neighborPos, neighborState, direction, glueCache)) {
+                final int distance = Math.abs(offset.getX()) + Math.abs(offset.getY()) + Math.abs(offset.getZ());
+                final Direction cardinalDirection = distance == 1
+                        ? Direction.fromDelta(offset.getX(), offset.getY(), offset.getZ())
+                        : null;
+
+                if (isConnected(level, pos, state, neighborPos, neighborState, cardinalDirection, glueCache)) {
                     frontier.add(neighborPos);
                     queued.add(neighborPos);
                 }
@@ -115,15 +147,24 @@ public final class FabricAssemblyScanner {
                                        final BlockState state,
                                        final BlockPos neighborPos,
                                        final BlockState neighborState,
-                                       final Direction direction,
+                                       final Direction cardinalDirection,
                                        final Set<SuperGlueEntity> glueCache) {
-        if (SuperGlueEntity.isGlued(level, pos, direction, glueCache)) {
+        // Upstream Simulated checks whether one Super Glue entity contains both
+        // positions. This works for direct neighbors and for edge-diagonal blocks
+        // covered by the same glue sheet.
+        if (isGluedBetween(level, pos, neighborPos, glueCache)) {
             return true;
         }
 
-        if (BlockMovementChecks.isBlockAttachedTowards(state, level, pos, direction)
+        // The remaining Create attachment rules are face-directional and do not
+        // apply to the diagonal offsets above.
+        if (cardinalDirection == null) {
+            return false;
+        }
+
+        if (BlockMovementChecks.isBlockAttachedTowards(state, level, pos, cardinalDirection)
                 || BlockMovementChecks.isBlockAttachedTowards(
-                        neighborState, level, neighborPos, direction.getOpposite())) {
+                        neighborState, level, neighborPos, cardinalDirection.getOpposite())) {
             return true;
         }
 
@@ -131,14 +172,38 @@ public final class FabricAssemblyScanner {
             return false;
         }
 
-        final boolean stickyFace = SuperGlueEntity.isSideSticky(level, pos, direction)
-                || SuperGlueEntity.isSideSticky(level, neighborPos, direction.getOpposite());
+        final boolean stickyFace = SuperGlueEntity.isSideSticky(level, pos, cardinalDirection)
+                || SuperGlueEntity.isSideSticky(level, neighborPos, cardinalDirection.getOpposite());
         if (!stickyFace) {
             return false;
         }
 
-        return !BlockMovementChecks.isNotSupportive(state, direction)
-                && !BlockMovementChecks.isNotSupportive(neighborState, direction.getOpposite());
+        return !BlockMovementChecks.isNotSupportive(state, cardinalDirection)
+                && !BlockMovementChecks.isNotSupportive(neighborState, cardinalDirection.getOpposite());
+    }
+
+    private static boolean isGluedBetween(final Level level,
+                                          final BlockPos first,
+                                          final BlockPos second,
+                                          final Set<SuperGlueEntity> glueCache) {
+        for (final SuperGlueEntity glue : glueCache) {
+            if (glue.contains(first) && glue.contains(second)) {
+                return true;
+            }
+        }
+
+        for (final SuperGlueEntity glue : level.getEntitiesOfClass(
+                SuperGlueEntity.class,
+                SuperGlueEntity.span(first, second).inflate(16))) {
+            if (!glue.contains(first) || !glue.contains(second)) {
+                continue;
+            }
+
+            glueCache.add(glue);
+            return true;
+        }
+
+        return false;
     }
 
     private static boolean isSlimeHoneyPair(final BlockState first, final BlockState second) {
