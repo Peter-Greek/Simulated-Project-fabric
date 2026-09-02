@@ -8,6 +8,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -28,9 +29,10 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 /**
  * Minecraft 1.20.1 placement/state backport of the Physics Assembler block.
  *
- * The block now has its upstream geometry, Create wrench integration, a
- * persistent block entity and a Create-aware structure discovery pass. Moving
- * the discovered blocks into a Sable sub-level is the next stage.
+ * The pre-Sable assembly lifecycle is now testable in game: scan a glued
+ * structure, prepare its snapshot, validate the same snapshot again, detect
+ * structural changes, cancel a prepared assembly, persist it through reloads,
+ * and invalidate it when the assembler is rotated.
  */
 public final class PhysicsAssemblerBlock extends Block implements EntityBlock, IWrenchable {
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
@@ -81,22 +83,46 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
             final BlockEntity blockEntity = level.getBlockEntity(pos);
             if (blockEntity instanceof final PhysicsAssemblerBlockEntity assembler) {
                 final int interactionCount = assembler.recordInteraction();
+
+                if (player.isShiftKeyDown()) {
+                    final boolean cleared = assembler.clearPreparedAssembly();
+                    player.displayClientMessage(Component.literal(cleared
+                            ? "Physics Assembler: prepared assembly cleared; state=IDLE"
+                            : "Physics Assembler: already IDLE"), false);
+                    return InteractionResult.CONSUME;
+                }
+
                 final Direction stickyFacing = getStickyFacing(state);
                 final BlockPos startPos = pos.relative(stickyFacing);
                 final FabricAssemblyScanner.ScanResult scan = FabricAssemblyScanner.scan(level, pos, startPos);
 
                 if (scan.successful()) {
-                    assembler.recordSuccessfulScan(scan.blocks().size());
+                    final PreparedAssembly snapshot = PreparedAssembly.capture(level, startPos, stickyFacing, scan);
+                    final PhysicsAssemblerBlockEntity.PreparationResult result = assembler.prepare(snapshot);
+                    final String verb = switch (result) {
+                        case PREPARED -> "PREPARED";
+                        case UPDATED -> "UPDATED";
+                        case VALIDATED -> "VALIDATED";
+                    };
+                    final String suffix = result == PhysicsAssemblerBlockEntity.PreparationResult.VALIDATED
+                            ? "; stable validations=" + assembler.getStableValidationCount()
+                                    + "; ready for future Sable handoff"
+                            : "; interact again without changing the structure to validate";
+
                     player.displayClientMessage(Component.literal(
-                            "Physics Assembler probe: " + scan.blocks().size()
-                                    + " block(s), bounds " + shortPos(scan.min())
-                                    + " -> " + shortPos(scan.max())
+                            "Physics Assembler " + verb + ": " + snapshot.blockCount()
+                                    + " block(s), bounds " + shortPos(snapshot.min())
+                                    + " -> " + shortPos(snapshot.max())
+                                    + ", size=" + snapshot.dimensions()
+                                    + ", signature=" + Long.toUnsignedString(snapshot.signature(), 16)
+                                    + suffix
                                     + "; interaction=" + interactionCount), false);
                 } else {
-                    assembler.recordFailedScan();
+                    assembler.recordFailedScan(scan.error());
                     player.displayClientMessage(Component.literal(
-                            "Physics Assembler probe failed: " + scan.error()
-                                    + " at " + shortPos(scan.problemPos())), false);
+                            "Physics Assembler ERROR: " + scan.error()
+                                    + " at " + shortPos(scan.problemPos())
+                                    + "; prepared snapshot cleared"), false);
                 }
             }
         }
@@ -106,13 +132,24 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
     /**
      * Create's default IWrenchable implementation looks for Create's six-way
      * FACING property. Physics Assembler instead uses the vanilla
-     * horizontal-facing + attach-face pair, so relying on the default makes
-     * rotation depend on which small model face was clicked. Keep the attach
-     * face fixed and rotate the horizontal orientation consistently.
+     * horizontal-facing + attach-face pair, so keep the attach face fixed and
+     * rotate the horizontal orientation consistently.
      */
     @Override
     public BlockState getRotatedBlockState(final BlockState originalState, final Direction targetedFace) {
         return originalState.setValue(FACING, originalState.getValue(FACING).getClockWise());
+    }
+
+    @Override
+    public InteractionResult onWrenched(final BlockState state, final UseOnContext context) {
+        final InteractionResult result = IWrenchable.super.onWrenched(state, context);
+        if (!context.getLevel().isClientSide && result.consumesAction()) {
+            final BlockEntity blockEntity = context.getLevel().getBlockEntity(context.getClickedPos());
+            if (blockEntity instanceof final PhysicsAssemblerBlockEntity assembler) {
+                assembler.clearPreparedAssembly();
+            }
+        }
+        return result;
     }
 
     @Override
