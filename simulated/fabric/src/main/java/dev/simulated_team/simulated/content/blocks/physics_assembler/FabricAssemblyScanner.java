@@ -1,12 +1,16 @@
 package dev.simulated_team.simulated.content.blocks.physics_assembler;
 
+import com.simibubi.create.AllBlocks;
 import com.simibubi.create.api.contraption.BlockMovementChecks;
 import com.simibubi.create.content.contraptions.glue.SuperGlueEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.world.level.material.PushReaction;
 
 import java.util.ArrayDeque;
 import java.util.HashSet;
@@ -60,6 +64,13 @@ public final class FabricAssemblyScanner {
             return ScanResult.failure("No block is attached to the Physics Assembler's sticky face.", startPos);
         }
 
+        // Upstream does not even enqueue a brittle seed. Keep that behavior
+        // explicit here so carpets/torches/etc. cannot become the root of an
+        // assembly simply because they happen to occupy the sticky-face block.
+        if (BlockMovementChecks.isBrittle(startState)) {
+            return ScanResult.failure("The block on the Physics Assembler's sticky face is brittle and cannot seed an assembly.", startPos);
+        }
+
         final Queue<BlockPos> frontier = new ArrayDeque<>();
         final Set<BlockPos> queued = new HashSet<>();
         final LinkedHashSet<BlockPos> blocks = new LinkedHashSet<>();
@@ -107,6 +118,27 @@ public final class FabricAssemblyScanner {
                     Math.max(max.getX(), pos.getX()),
                     Math.max(max.getY(), pos.getY()),
                     Math.max(max.getZ(), pos.getZ()));
+
+            // Vanilla double-chest halves are forced to travel together by
+            // upstream Simulated even if there is no Super Glue on their seam.
+            if (state.hasProperty(ChestBlock.TYPE)
+                    && state.hasProperty(ChestBlock.FACING)
+                    && state.getValue(ChestBlock.TYPE) != ChestType.SINGLE) {
+                final BlockPos attached = pos.relative(ChestBlock.getConnectedDirection(state));
+                if (!attached.equals(assemblerPos) && queued.add(attached)) {
+                    frontier.add(attached);
+                }
+            }
+
+            // Create cart assemblers attach themselves to a structure directly
+            // above them; this mirrors the special-case in SimAssemblyContraption.
+            final BlockPos below = pos.below();
+            if (!below.equals(assemblerPos)
+                    && !queued.contains(below)
+                    && AllBlocks.CART_ASSEMBLER.has(level.getBlockState(below))) {
+                frontier.add(below);
+                queued.add(below);
+            }
 
             for (final BlockPos offset : DIRECTION_OFFSETS) {
                 final BlockPos neighborPos = pos.offset(offset);
@@ -169,6 +201,15 @@ public final class FabricAssemblyScanner {
         }
 
         if (isSlimeHoneyPair(state, neighborState)) {
+            return false;
+        }
+
+        // Brittle blocks and PUSH_ONLY blocks can still be explicitly glued or
+        // attached, but must not be dragged merely by a sticky surface.
+        if (BlockMovementChecks.isBrittle(state)
+                || BlockMovementChecks.isBrittle(neighborState)
+                || state.getPistonPushReaction() == PushReaction.PUSH_ONLY
+                || neighborState.getPistonPushReaction() == PushReaction.PUSH_ONLY) {
             return false;
         }
 
