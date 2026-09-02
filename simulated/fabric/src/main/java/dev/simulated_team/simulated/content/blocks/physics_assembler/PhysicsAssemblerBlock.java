@@ -29,10 +29,10 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 /**
  * Minecraft 1.20.1 placement/state backport of the Physics Assembler block.
  *
- * The pre-Sable assembly lifecycle is now testable in game: scan a glued
- * structure, prepare its snapshot, validate the same snapshot again, detect
- * structural changes, cancel a prepared assembly, persist it through reloads,
- * and invalidate it when the assembler is rotated.
+ * The pre-Sable assembly lifecycle is testable in game: scan a glued structure,
+ * build a non-mutating handoff preflight, prepare its snapshot, validate the
+ * same snapshot again, detect structural/glue changes, cancel a prepared
+ * assembly, persist it through reloads, and invalidate it when wrench-rotated.
  */
 public final class PhysicsAssemblerBlock extends Block implements EntityBlock, IWrenchable {
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
@@ -97,7 +97,9 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
                 final FabricAssemblyScanner.ScanResult scan = FabricAssemblyScanner.scan(level, pos, startPos);
 
                 if (scan.successful()) {
-                    final PreparedAssembly snapshot = PreparedAssembly.capture(level, startPos, stickyFacing, scan);
+                    final FabricAssemblyPlan plan = FabricAssemblyPlan.capture(level, scan);
+                    final PreparedAssembly snapshot = PreparedAssembly.capture(
+                            level, startPos, stickyFacing, scan, plan);
                     final PhysicsAssemblerBlockEntity.PreparationResult result = assembler.prepare(snapshot);
                     final String verb = switch (result) {
                         case PREPARED -> "PREPARED";
@@ -106,16 +108,20 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
                     };
                     final String suffix = result == PhysicsAssemblerBlockEntity.PreparationResult.VALIDATED
                             ? "; stable validations=" + assembler.getStableValidationCount()
-                                    + "; ready for future Sable handoff"
+                                    + "; dry-run handoff is stable"
                             : "; interact again without changing the structure to validate";
+                    final String warning = plan.hasDeferredCreateContraptions()
+                            ? "; WARNING: intersecting moving Create contraption(s) still need upstream expansion logic"
+                            : "";
 
                     player.displayClientMessage(Component.literal(
                             "Physics Assembler " + verb + ": " + snapshot.blockCount()
                                     + " block(s), bounds " + shortPos(snapshot.min())
                                     + " -> " + shortPos(snapshot.max())
                                     + ", size=" + snapshot.dimensions()
-                                    + ", signature=" + Long.toUnsignedString(snapshot.signature(), 16)
-                                    + suffix
+                                    + "; preflight: " + plan.summary()
+                                    + "; signature=" + Long.toUnsignedString(snapshot.signature(), 16)
+                                    + suffix + warning
                                     + "; interaction=" + interactionCount), false);
                 } else {
                     assembler.recordFailedScan(scan.error());
