@@ -75,6 +75,13 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
     @Override
     public InteractionResult use(final BlockState state, final Level level, final BlockPos pos,
                                  final Player player, final InteractionHand hand, final BlockHitResult hit) {
+        // The 1.20.1 interaction path can try an empty off-hand after the main
+        // hand. Treat the assembler as a main-hand-only empty-hand control so a
+        // single physical right-click cannot advance the lifecycle twice.
+        if (hand != InteractionHand.MAIN_HAND) {
+            return InteractionResult.PASS;
+        }
+
         if (!player.getItemInHand(hand).isEmpty()) {
             return InteractionResult.PASS;
         }
@@ -82,6 +89,10 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
         if (!level.isClientSide) {
             final BlockEntity blockEntity = level.getBlockEntity(pos);
             if (blockEntity instanceof final PhysicsAssemblerBlockEntity assembler) {
+                if (!assembler.tryBeginInteraction(level.getGameTime(), player.getUUID())) {
+                    return InteractionResult.CONSUME;
+                }
+
                 final int interactionCount = assembler.recordInteraction();
 
                 if (player.isShiftKeyDown()) {
