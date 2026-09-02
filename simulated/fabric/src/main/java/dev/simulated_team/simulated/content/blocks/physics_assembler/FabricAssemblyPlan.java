@@ -26,7 +26,8 @@ public record FabricAssemblyPlan(int blockCount,
                                  int superGlueSheetCount,
                                  int controlledContraptionCount,
                                  long glueSignature,
-                                 AABB worldBounds) {
+                                 AABB worldBounds,
+                                 FabricAssemblyScanner.ScanStats scanStats) {
 
     public static FabricAssemblyPlan capture(final Level level,
                                              final FabricAssemblyScanner.ScanResult scan) {
@@ -76,7 +77,8 @@ public record FabricAssemblyPlan(int blockCount,
                 relevantGlues.size(),
                 controlledContraptions,
                 glueSignature,
-                bounds);
+                bounds,
+                scan.stats());
     }
 
     public boolean hasDeferredCreateContraptions() {
@@ -88,7 +90,8 @@ public record FabricAssemblyPlan(int blockCount,
                 + ", blockEntities=" + blockEntityCount
                 + ", glueSheets=" + superGlueSheetCount
                 + ", fluidBlocks=" + fluidBlockCount
-                + ", createContraptions=" + controlledContraptionCount;
+                + ", createContraptions=" + controlledContraptionCount
+                + "; scanRules={" + scanStats.summary() + "}";
     }
 
     private static String boundsKey(final SuperGlueEntity glue) {
