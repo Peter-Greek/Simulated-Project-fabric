@@ -181,23 +181,32 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
     }
 
     /**
-     * Create's default IWrenchable implementation looks for Create's six-way
-     * FACING property. Physics Assembler instead uses the vanilla
-     * horizontal-facing + attach-face pair, so keep the attach face fixed and
-     * rotate the horizontal orientation consistently.
+     * Match Create's 1.20.1 IWrenchable behavior rather than forcing every
+     * click to rotate the horizontal-facing property. Floor and ceiling mounts
+     * can rotate around Y. A wall mount has no independent roll property in
+     * upstream Simulated: its horizontal FACING also identifies its support wall.
      */
     @Override
     public BlockState getRotatedBlockState(final BlockState originalState, final Direction targetedFace) {
-        return originalState.setValue(FACING, originalState.getValue(FACING).getClockWise());
+        return IWrenchable.super.getRotatedBlockState(originalState, targetedFace);
     }
 
     @Override
     public InteractionResult onWrenched(final BlockState state, final UseOnContext context) {
+        final BlockState rotated = getRotatedBlockState(state, context.getClickedFace());
+        final boolean wallOrientationLocked = state.getValue(FACE) == AttachFace.WALL && rotated == state;
         final InteractionResult result = IWrenchable.super.onWrenched(state, context);
-        if (!context.getLevel().isClientSide && result.consumesAction()) {
-            final BlockEntity blockEntity = context.getLevel().getBlockEntity(context.getClickedPos());
-            if (blockEntity instanceof final PhysicsAssemblerBlockEntity assembler) {
-                assembler.clearPreparedAssembly();
+
+        if (!context.getLevel().isClientSide) {
+            if (wallOrientationLocked && context.getPlayer() != null) {
+                context.getPlayer().displayClientMessage(Component.literal(
+                        "Physics Assembler: wall orientation is support-locked (upstream behavior); floor/ceiling mounts can be wrench-rotated."), true);
+            }
+            if (result.consumesAction()) {
+                final BlockEntity blockEntity = context.getLevel().getBlockEntity(context.getClickedPos());
+                if (blockEntity instanceof final PhysicsAssemblerBlockEntity assembler) {
+                    assembler.clearPreparedAssembly();
+                }
             }
         }
         return result;
