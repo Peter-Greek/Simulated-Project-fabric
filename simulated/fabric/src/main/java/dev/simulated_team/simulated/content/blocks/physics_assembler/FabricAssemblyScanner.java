@@ -2,14 +2,27 @@ package dev.simulated_team.simulated.content.blocks.physics_assembler;
 
 import com.simibubi.create.AllBlocks;
 import com.simibubi.create.api.contraption.BlockMovementChecks;
+import com.simibubi.create.content.contraptions.chassis.AbstractChassisBlock;
+import com.simibubi.create.content.contraptions.chassis.ChassisBlockEntity;
+import com.simibubi.create.content.contraptions.gantry.GantryCarriageBlock;
 import com.simibubi.create.content.contraptions.glue.SuperGlueEntity;
+import com.simibubi.create.content.contraptions.piston.MechanicalPistonBlock;
+import com.simibubi.create.content.contraptions.piston.MechanicalPistonBlock.PistonState;
+import com.simibubi.create.content.contraptions.piston.MechanicalPistonHeadBlock;
+import com.simibubi.create.content.contraptions.piston.PistonExtensionPoleBlock;
+import com.simibubi.create.content.kinetics.base.IRotate;
+import com.simibubi.create.content.kinetics.gantry.GantryShaftBlock;
+import com.simibubi.create.content.trains.bogey.AbstractBogeyBlock;
+import net.createmod.catnip.data.Iterate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.world.level.block.state.properties.PistonType;
 import net.minecraft.world.level.material.PushReaction;
 
 import java.util.ArrayDeque;
@@ -22,8 +35,8 @@ import java.util.Set;
  * Minecraft 1.20.1 backport of Simulated's structure-discovery stage.
  *
  * This deliberately stops before moving blocks into a Sable sub-level. It lets
- * us validate Create movement checks, Super Glue and sticky attachments against
- * the Homestead stack independently from the physics backport.
+ * us validate Create movement checks, Super Glue and Create-specific attachment
+ * rules against the Homestead stack independently from the physics backport.
  */
 public final class FabricAssemblyScanner {
     private static final int MAX_BLOCKS = 128_000;
@@ -64,9 +77,9 @@ public final class FabricAssemblyScanner {
             return ScanResult.failure("No block is attached to the Physics Assembler's sticky face.", startPos);
         }
 
-        // Upstream does not even enqueue a brittle seed. Keep that behavior
-        // explicit here so carpets/torches/etc. cannot become the root of an
-        // assembly simply because they happen to occupy the sticky-face block.
+        // Upstream SimAssemblyContraption does not enqueue a brittle seed. A
+        // brittle block can still be carried later when it is explicitly glued
+        // or otherwise attached; that distinction matters for carpet/torch tests.
         if (BlockMovementChecks.isBrittle(startState)) {
             return ScanResult.failure("The block on the Physics Assembler's sticky face is brittle and cannot seed an assembly.", startPos);
         }
@@ -75,6 +88,7 @@ public final class FabricAssemblyScanner {
         final Set<BlockPos> queued = new HashSet<>();
         final LinkedHashSet<BlockPos> blocks = new LinkedHashSet<>();
         final Set<SuperGlueEntity> glueCache = new HashSet<>();
+        final MutableStats stats = new MutableStats();
 
         frontier.add(startPos);
         queued.add(startPos);
@@ -105,7 +119,12 @@ public final class FabricAssemblyScanner {
                 return ScanResult.failure("Assembly contains a block Create considers immovable.", pos);
             }
 
-            blocks.add(pos.immutable());
+            if (!blocks.add(pos.immutable())) {
+                continue;
+            }
+            if (BlockMovementChecks.isBrittle(state)) {
+                stats.brittleBlocks++;
+            }
             if (blocks.size() > MAX_BLOCKS) {
                 return ScanResult.failure("Assembly is larger than the current 128,000 block limit.", pos);
             }
@@ -125,19 +144,141 @@ public final class FabricAssemblyScanner {
                     && state.hasProperty(ChestBlock.FACING)
                     && state.getValue(ChestBlock.TYPE) != ChestType.SINGLE) {
                 final BlockPos attached = pos.relative(ChestBlock.getConnectedDirection(state));
-                if (!attached.equals(assemblerPos) && queued.add(attached)) {
-                    frontier.add(attached);
+                if (enqueue(attached, assemblerPos, frontier, queued)) {
+                    stats.chestLinks++;
+                }
+            }
+
+            // Bogeys expose their own sticky surfaces and are handled explicitly
+            // by upstream before the generic glue/sticky search.
+            if (state.getBlock() instanceof final AbstractBogeyBlock<?> bogey) {
+                for (final Direction direction : bogey.getStickySurfaces(level, pos, state)) {
+                    if (enqueue(pos.relative(direction), assemblerPos, frontier, queued)) {
+                        stats.bogeyLinks++;
+                    }
+                }
+            }
+
+            // Chassis ranges/groups must be honored even when blocks are not
+            // reachable through ordinary face-stickiness.
+            if (state.getBlock() instanceof AbstractChassisBlock
+                    && level.getBlockEntity(pos) instanceof final ChassisBlockEntity chassis) {
+                final Queue<BlockPos> chassisFrontier = new ArrayDeque<>();
+                final Set<BlockPos> chassisVisited = new HashSet<>(queued);
+                chassis.addAttachedChasses(chassisFrontier, chassisVisited);
+                for (final BlockPos chassisPos : chassisFrontier) {
+                    if (enqueue(chassisPos, assemblerPos, frontier, queued)) {
+                        stats.chassisLinks++;
+                    }
+                }
+                final var included = chassis.getIncludedBlockPositions(null, false);
+                if (included == null) {
+                    return ScanResult.failure("Create chassis could not resolve its attached block range.", pos);
+                }
+                for (final BlockPos includedPos : included) {
+                    if (enqueue(includedPos, assemblerPos, frontier, queued)) {
+                        stats.chassisLinks++;
+                    }
+                }
+            }
+
+            // Mechanical pistons, poles and heads are structurally linked in
+            // ways generic glue rules do not describe. These cases mirror the
+            // upstream SimAssemblyContraption helpers.
+            if (state.getBlock() instanceof MechanicalPistonBlock) {
+                final Direction pistonFacing = state.getValue(MechanicalPistonBlock.FACING);
+                final PistonState pistonState = state.getValue(MechanicalPistonBlock.STATE);
+                if (pistonState == PistonState.MOVING) {
+                    return ScanResult.failure("Assembly contains a mechanical piston while it is moving.", pos);
+                }
+
+                final BlockPos behind = pos.relative(pistonFacing.getOpposite());
+                final BlockState behindState = level.getBlockState(behind);
+                if (MechanicalPistonBlock.isExtensionPole(behindState)
+                        && behindState.getValue(PistonExtensionPoleBlock.FACING).getAxis() == pistonFacing.getAxis()
+                        && enqueue(behind, assemblerPos, frontier, queued)) {
+                    stats.pistonLinks++;
+                }
+
+                if ((pistonState == PistonState.EXTENDED || MechanicalPistonBlock.isStickyPiston(state))
+                        && enqueue(pos.relative(pistonFacing), assemblerPos, frontier, queued)) {
+                    stats.pistonLinks++;
+                }
+            } else if (MechanicalPistonBlock.isPistonHead(state)) {
+                final Direction headFacing = state.getValue(MechanicalPistonHeadBlock.FACING);
+                final BlockPos behind = pos.relative(headFacing.getOpposite());
+                final BlockState behindState = level.getBlockState(behind);
+                final boolean validPole = MechanicalPistonBlock.isExtensionPole(behindState)
+                        && behindState.getValue(PistonExtensionPoleBlock.FACING).getAxis() == headFacing.getAxis();
+                final boolean validBase = MechanicalPistonBlock.isPiston(behindState)
+                        && behindState.getValue(MechanicalPistonBlock.FACING) == headFacing
+                        && behindState.getValue(MechanicalPistonBlock.STATE) == PistonState.EXTENDED;
+                if ((validPole || validBase) && enqueue(behind, assemblerPos, frontier, queued)) {
+                    stats.pistonLinks++;
+                }
+                if (state.getValue(MechanicalPistonHeadBlock.TYPE) == PistonType.STICKY
+                        && enqueue(pos.relative(headFacing), assemblerPos, frontier, queued)) {
+                    stats.pistonLinks++;
+                }
+            } else if (MechanicalPistonBlock.isExtensionPole(state)) {
+                final Direction.Axis poleAxis = state.getValue(PistonExtensionPoleBlock.FACING).getAxis();
+                for (final Direction direction : Iterate.directionsInAxis(poleAxis)) {
+                    final BlockPos attached = pos.relative(direction);
+                    final BlockState attachedState = level.getBlockState(attached);
+                    final boolean validPole = MechanicalPistonBlock.isExtensionPole(attachedState)
+                            && attachedState.getValue(PistonExtensionPoleBlock.FACING).getAxis() == poleAxis;
+                    final boolean validHead = MechanicalPistonBlock.isPistonHead(attachedState)
+                            && attachedState.getValue(MechanicalPistonHeadBlock.FACING).getAxis() == poleAxis;
+                    final boolean validBase = MechanicalPistonBlock.isPiston(attachedState)
+                            && attachedState.getValue(MechanicalPistonBlock.FACING).getAxis() == poleAxis
+                            && attachedState.getValue(MechanicalPistonBlock.STATE) == PistonState.EXTENDED;
+                    if ((validPole || validHead || validBase)
+                            && enqueue(attached, assemblerPos, frontier, queued)) {
+                        stats.pistonLinks++;
+                    }
+                }
+            }
+
+            // Gantry pinions and shafts also form structural chains independently
+            // of Super Glue.
+            if (state.getBlock() instanceof final GantryCarriageBlock carriage) {
+                final Direction carriageFacing = state.getValue(GantryCarriageBlock.FACING);
+                if (enqueue(pos.relative(carriageFacing), assemblerPos, frontier, queued)) {
+                    stats.gantryLinks++;
+                }
+                final Direction.Axis rotationAxis = ((IRotate) carriage).getRotationAxis(state);
+                for (final Direction direction : Iterate.directionsInAxis(rotationAxis)) {
+                    final BlockPos attached = pos.relative(direction);
+                    final BlockState attachedState = level.getBlockState(attached);
+                    if (AllBlocks.GANTRY_SHAFT.has(attachedState)
+                            && attachedState.getValue(GantryShaftBlock.FACING).getAxis() == direction.getAxis()
+                            && enqueue(attached, assemblerPos, frontier, queued)) {
+                        stats.gantryLinks++;
+                    }
+                }
+            } else if (state.getBlock() instanceof GantryShaftBlock) {
+                final Direction shaftFacing = state.getValue(GantryShaftBlock.FACING);
+                for (final Direction direction : Iterate.directions) {
+                    final BlockPos attached = pos.relative(direction);
+                    final BlockState attachedState = level.getBlockState(attached);
+                    final boolean sameShaft = direction.getAxis() == shaftFacing.getAxis()
+                            && AllBlocks.GANTRY_SHAFT.has(attachedState)
+                            && attachedState.getValue(GantryShaftBlock.FACING) == shaftFacing;
+                    final boolean carriageFacingShaft = AllBlocks.GANTRY_CARRIAGE.has(attachedState)
+                            && attachedState.getValue(GantryCarriageBlock.FACING) == direction;
+                    if ((sameShaft || carriageFacingShaft)
+                            && enqueue(attached, assemblerPos, frontier, queued)) {
+                        stats.gantryLinks++;
+                    }
                 }
             }
 
             // Create cart assemblers attach themselves to a structure directly
             // above them; this mirrors the special-case in SimAssemblyContraption.
             final BlockPos below = pos.below();
-            if (!below.equals(assemblerPos)
-                    && !queued.contains(below)
-                    && AllBlocks.CART_ASSEMBLER.has(level.getBlockState(below))) {
-                frontier.add(below);
-                queued.add(below);
+            if (AllBlocks.CART_ASSEMBLER.has(level.getBlockState(below))
+                    && enqueue(below, assemblerPos, frontier, queued)) {
+                stats.cartAssemblerLinks++;
             }
 
             for (final BlockPos offset : DIRECTION_OFFSETS) {
@@ -164,44 +305,65 @@ public final class FabricAssemblyScanner {
                         ? Direction.fromDelta(offset.getX(), offset.getY(), offset.getZ())
                         : null;
 
-                if (isConnected(level, pos, state, neighborPos, neighborState, cardinalDirection, glueCache)) {
-                    frontier.add(neighborPos);
-                    queued.add(neighborPos);
+                final ConnectionType connection = connectionType(
+                        level, pos, state, neighborPos, neighborState, cardinalDirection, glueCache);
+                if (connection != ConnectionType.NONE && enqueue(neighborPos, assemblerPos, frontier, queued)) {
+                    if (connection == ConnectionType.GLUE) {
+                        stats.glueLinks++;
+                        if (BlockMovementChecks.isBrittle(neighborState)) {
+                            stats.glueCarriedBrittle++;
+                        }
+                    } else if (connection == ConnectionType.ATTACHMENT) {
+                        stats.createAttachmentLinks++;
+                    } else if (connection == ConnectionType.STICKY) {
+                        stats.stickyLinks++;
+                    }
                 }
             }
         }
 
-        return ScanResult.success(blocks, glueCache, min, max);
+        return ScanResult.success(blocks, glueCache, min, max, stats.freeze());
     }
 
-    private static boolean isConnected(final Level level,
-                                       final BlockPos pos,
-                                       final BlockState state,
-                                       final BlockPos neighborPos,
-                                       final BlockState neighborState,
-                                       final Direction cardinalDirection,
-                                       final Set<SuperGlueEntity> glueCache) {
-        // Upstream Simulated checks whether one Super Glue entity contains both
-        // positions. This works for direct neighbors and for edge-diagonal blocks
-        // covered by the same glue sheet.
+    private static boolean enqueue(final BlockPos pos,
+                                   final BlockPos assemblerPos,
+                                   final Queue<BlockPos> frontier,
+                                   final Set<BlockPos> queued) {
+        if (pos.equals(assemblerPos) || !queued.add(pos)) {
+            return false;
+        }
+        frontier.add(pos);
+        return true;
+    }
+
+    private static ConnectionType connectionType(final Level level,
+                                                 final BlockPos pos,
+                                                 final BlockState state,
+                                                 final BlockPos neighborPos,
+                                                 final BlockState neighborState,
+                                                 final Direction cardinalDirection,
+                                                 final Set<SuperGlueEntity> glueCache) {
+        // Explicit glue is allowed to carry brittle blocks in upstream Simulated.
+        // This is why a glued carpet counts even though a carpet cannot seed an
+        // assembly by itself.
         if (isGluedBetween(level, pos, neighborPos, glueCache)) {
-            return true;
+            return ConnectionType.GLUE;
         }
 
         // The remaining Create attachment rules are face-directional and do not
         // apply to the diagonal offsets above.
         if (cardinalDirection == null) {
-            return false;
+            return ConnectionType.NONE;
         }
 
         if (BlockMovementChecks.isBlockAttachedTowards(state, level, pos, cardinalDirection)
                 || BlockMovementChecks.isBlockAttachedTowards(
                         neighborState, level, neighborPos, cardinalDirection.getOpposite())) {
-            return true;
+            return ConnectionType.ATTACHMENT;
         }
 
         if (isSlimeHoneyPair(state, neighborState)) {
-            return false;
+            return ConnectionType.NONE;
         }
 
         // Brittle blocks and PUSH_ONLY blocks can still be explicitly glued or
@@ -210,17 +372,19 @@ public final class FabricAssemblyScanner {
                 || BlockMovementChecks.isBrittle(neighborState)
                 || state.getPistonPushReaction() == PushReaction.PUSH_ONLY
                 || neighborState.getPistonPushReaction() == PushReaction.PUSH_ONLY) {
-            return false;
+            return ConnectionType.NONE;
         }
 
         final boolean stickyFace = SuperGlueEntity.isSideSticky(level, pos, cardinalDirection)
                 || SuperGlueEntity.isSideSticky(level, neighborPos, cardinalDirection.getOpposite());
         if (!stickyFace) {
-            return false;
+            return ConnectionType.NONE;
         }
 
         return !BlockMovementChecks.isNotSupportive(state, cardinalDirection)
-                && !BlockMovementChecks.isNotSupportive(neighborState, cardinalDirection.getOpposite());
+                && !BlockMovementChecks.isNotSupportive(neighborState, cardinalDirection.getOpposite())
+                ? ConnectionType.STICKY
+                : ConnectionType.NONE;
     }
 
     private static boolean isGluedBetween(final Level level,
@@ -252,22 +416,90 @@ public final class FabricAssemblyScanner {
                 || first.is(Blocks.HONEY_BLOCK) && second.is(Blocks.SLIME_BLOCK);
     }
 
+    private enum ConnectionType {
+        NONE,
+        GLUE,
+        ATTACHMENT,
+        STICKY
+    }
+
+    private static final class MutableStats {
+        private int brittleBlocks;
+        private int glueCarriedBrittle;
+        private int glueLinks;
+        private int createAttachmentLinks;
+        private int stickyLinks;
+        private int chestLinks;
+        private int chassisLinks;
+        private int bogeyLinks;
+        private int pistonLinks;
+        private int gantryLinks;
+        private int cartAssemblerLinks;
+
+        private ScanStats freeze() {
+            return new ScanStats(
+                    brittleBlocks,
+                    glueCarriedBrittle,
+                    glueLinks,
+                    createAttachmentLinks,
+                    stickyLinks,
+                    chestLinks,
+                    chassisLinks,
+                    bogeyLinks,
+                    pistonLinks,
+                    gantryLinks,
+                    cartAssemblerLinks);
+        }
+    }
+
+    public record ScanStats(int brittleBlocks,
+                            int glueCarriedBrittle,
+                            int glueLinks,
+                            int createAttachmentLinks,
+                            int stickyLinks,
+                            int chestLinks,
+                            int chassisLinks,
+                            int bogeyLinks,
+                            int pistonLinks,
+                            int gantryLinks,
+                            int cartAssemblerLinks) {
+        public static ScanStats empty() {
+            return new ScanStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        }
+
+        public String summary() {
+            return "brittle=" + brittleBlocks
+                    + " (glue-carried=" + glueCarriedBrittle + ")"
+                    + ", links[glue=" + glueLinks
+                    + ", create=" + createAttachmentLinks
+                    + ", sticky=" + stickyLinks
+                    + ", chest=" + chestLinks
+                    + ", chassis=" + chassisLinks
+                    + ", bogey=" + bogeyLinks
+                    + ", piston=" + pistonLinks
+                    + ", gantry=" + gantryLinks
+                    + ", cart=" + cartAssemblerLinks + "]";
+        }
+    }
+
     public record ScanResult(boolean successful,
                              Set<BlockPos> blocks,
                              Set<SuperGlueEntity> glues,
                              BlockPos min,
                              BlockPos max,
+                             ScanStats stats,
                              String error,
                              BlockPos problemPos) {
         private static ScanResult success(final Set<BlockPos> blocks,
                                           final Set<SuperGlueEntity> glues,
                                           final BlockPos min,
-                                          final BlockPos max) {
-            return new ScanResult(true, Set.copyOf(blocks), Set.copyOf(glues), min, max, null, null);
+                                          final BlockPos max,
+                                          final ScanStats stats) {
+            return new ScanResult(true, Set.copyOf(blocks), Set.copyOf(glues), min, max, stats, null, null);
         }
 
         private static ScanResult failure(final String error, final BlockPos problemPos) {
-            return new ScanResult(false, Set.of(), Set.of(), null, null, error, problemPos.immutable());
+            return new ScanResult(false, Set.of(), Set.of(), null, null, ScanStats.empty(), error, problemPos.immutable());
         }
     }
 }
