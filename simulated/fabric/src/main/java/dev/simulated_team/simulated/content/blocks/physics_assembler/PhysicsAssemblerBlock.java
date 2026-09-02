@@ -103,6 +103,18 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
         return InteractionResult.sidedSuccess(level.isClientSide);
     }
 
+    /**
+     * Create's default IWrenchable implementation looks for Create's six-way
+     * FACING property. Physics Assembler instead uses the vanilla
+     * horizontal-facing + attach-face pair, so relying on the default makes
+     * rotation depend on which small model face was clicked. Keep the attach
+     * face fixed and rotate the horizontal orientation consistently.
+     */
+    @Override
+    public BlockState getRotatedBlockState(final BlockState originalState, final Direction targetedFace) {
+        return originalState.setValue(FACING, originalState.getValue(FACING).getClockWise());
+    }
+
     @Override
     public VoxelShape getShape(final BlockState state, final BlockGetter level, final BlockPos pos,
                                final CollisionContext context) {
