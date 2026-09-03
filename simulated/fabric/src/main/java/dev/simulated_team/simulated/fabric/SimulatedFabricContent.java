@@ -1,10 +1,13 @@
 package dev.simulated_team.simulated.fabric;
 
+import com.simibubi.create.api.behaviour.interaction.MovingInteractionBehaviour;
 import com.simibubi.create.api.contraption.ContraptionType;
 import com.simibubi.create.api.registry.CreateBuiltInRegistries;
 import com.simibubi.create.content.processing.sequenced.SequencedAssemblyItem;
+import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerAnchorBlock;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlock;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlockEntity;
+import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerMovingInteraction;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblyContraption;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.minecraft.core.Holder;
@@ -15,6 +18,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 
@@ -33,8 +37,19 @@ public final class SimulatedFabricContent {
     public static final PhysicsAssemblerBlock PHYSICS_ASSEMBLER = new PhysicsAssemblerBlock(
             BlockBehaviour.Properties.of().strength(2.5F, 6.0F).noOcclusion());
 
+    /**
+     * No item form: this block only exists while the visible assembler is part
+     * of a moving Create contraption.
+     */
+    public static final PhysicsAssemblerAnchorBlock PHYSICS_ASSEMBLER_ANCHOR = new PhysicsAssemblerAnchorBlock(
+            BlockBehaviour.Properties.of().strength(-1.0F, 3600000.0F).noCollission().noOcclusion());
+
     public static final BlockEntityType<PhysicsAssemblerBlockEntity> PHYSICS_ASSEMBLER_BLOCK_ENTITY =
-            BlockEntityType.Builder.of(PhysicsAssemblerBlockEntity::new, PHYSICS_ASSEMBLER).build(null);
+            BlockEntityType.Builder.of(
+                    PhysicsAssemblerBlockEntity::new,
+                    PHYSICS_ASSEMBLER,
+                    PHYSICS_ASSEMBLER_ANCHOR)
+                    .build(null);
 
     private static Holder.Reference<ContraptionType> physicsAssemblyContraptionType;
 
@@ -53,7 +68,14 @@ public final class SimulatedFabricContent {
         registerItem("engine_assembly", ENGINE_ASSEMBLY);
         registerItem("incomplete_engine_assembly", INCOMPLETE_ENGINE_ASSEMBLY);
         registerBlockWithItem("physics_assembler", PHYSICS_ASSEMBLER);
+        registerBlock("physics_assembler_anchor", PHYSICS_ASSEMBLER_ANCHOR);
         Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, id("physics_assembler"), PHYSICS_ASSEMBLER_BLOCK_ENTITY);
+
+        // This is what makes the visible assembler on the moving contraption
+        // clickable after its world-side block has been replaced by the anchor.
+        MovingInteractionBehaviour.REGISTRY.register(
+                PHYSICS_ASSEMBLER,
+                new PhysicsAssemblerMovingInteraction());
 
         Registry.register(
                 BuiltInRegistries.CREATIVE_MODE_TAB,
@@ -80,10 +102,14 @@ public final class SimulatedFabricContent {
         Registry.register(BuiltInRegistries.ITEM, id(path), item);
     }
 
-    private static void registerBlockWithItem(final String path, final PhysicsAssemblerBlock block) {
+    private static void registerBlockWithItem(final String path, final Block block) {
         final ResourceLocation id = id(path);
         Registry.register(BuiltInRegistries.BLOCK, id, block);
         Registry.register(BuiltInRegistries.ITEM, id, new BlockItem(block, new Item.Properties()));
+    }
+
+    private static void registerBlock(final String path, final Block block) {
+        Registry.register(BuiltInRegistries.BLOCK, id(path), block);
     }
 
     private static ResourceLocation id(final String path) {
