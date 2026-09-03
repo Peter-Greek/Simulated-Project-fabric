@@ -30,12 +30,12 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
- * Minecraft 1.20.1 placement/state backport of the Physics Assembler block.
+ * Fabric 1.20.1 Physics Assembler.
  *
- * The pre-Sable assembly lifecycle is testable in game: scan a glued structure,
- * build a non-mutating handoff preflight, prepare its snapshot, validate the
- * same snapshot again, detect structural/glue changes, cancel a prepared
- * assembly, persist it through reloads, and invalidate it when wrench-rotated.
+ * Normal empty-hand use now toggles a real moving Create contraption instead of
+ * advancing a dry-run validation state. Sneak-use nudges an active assembly one
+ * block horizontally; this is temporary transport control until Sable supplies
+ * rigid-body physics on 1.20.1.
  */
 public final class PhysicsAssemblerBlock extends Block implements EntityBlock, IWrenchable {
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
@@ -71,13 +71,15 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
         return state.canSurvive(context.getLevel(), context.getClickedPos()) ? state : null;
     }
 
-    /**
-     * Upstream PhysicsAssemblerBlock extends FaceAttachedHorizontalDirectionalBlock.
-     * Reproduce its support rule explicitly on 1.20.1: the assembler must have a
-     * solid support face on the same side that seeds the assembly.
-     */
     @Override
     public boolean canSurvive(final BlockState state, final LevelReader level, final BlockPos pos) {
+        // During the compatibility transport phase the controller stays in the
+        // parent world while its supporting structure is a moving entity.
+        if (level.getBlockEntity(pos) instanceof final PhysicsAssemblerBlockEntity assembler
+                && assembler.isHoldingAssembly()) {
+            return true;
+        }
+
         final Direction supportDirection = getStickyFacing(state);
         final BlockPos supportPos = pos.relative(supportDirection);
         return !level.getBlockState(supportPos)
@@ -107,13 +109,9 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
     @Override
     public InteractionResult use(final BlockState state, final Level level, final BlockPos pos,
                                  final Player player, final InteractionHand hand, final BlockHitResult hit) {
-        // The 1.20.1 interaction path can try an empty off-hand after the main
-        // hand. Treat the assembler as a main-hand-only empty-hand control so a
-        // single physical right-click cannot advance the lifecycle twice.
         if (hand != InteractionHand.MAIN_HAND) {
             return InteractionResult.PASS;
         }
-
         if (!player.getItemInHand(hand).isEmpty()) {
             return InteractionResult.PASS;
         }
@@ -125,67 +123,21 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
                     return InteractionResult.CONSUME;
                 }
 
-                final int interactionCount = assembler.recordInteraction();
-
+                final PhysicsAssemblerBlockEntity.OperationResult result;
                 if (player.isShiftKeyDown()) {
-                    final boolean cleared = assembler.clearPreparedAssembly();
-                    player.displayClientMessage(Component.literal(cleared
-                            ? "Physics Assembler: prepared assembly cleared; state=IDLE"
-                            : "Physics Assembler: already IDLE"), false);
-                    return InteractionResult.CONSUME;
-                }
-
-                final Direction stickyFacing = getStickyFacing(state);
-                final BlockPos startPos = pos.relative(stickyFacing);
-                final FabricAssemblyScanner.ScanResult scan = FabricAssemblyScanner.scan(level, pos, startPos);
-
-                if (scan.successful()) {
-                    final FabricAssemblyPlan plan = FabricAssemblyPlan.capture(level, scan);
-                    final PreparedAssembly snapshot = PreparedAssembly.capture(
-                            level, startPos, stickyFacing, scan, plan);
-                    final PhysicsAssemblerBlockEntity.PreparationResult result = assembler.prepare(snapshot);
-                    final String verb = switch (result) {
-                        case PREPARED -> "PREPARED";
-                        case UPDATED -> "UPDATED";
-                        case VALIDATED -> "VALIDATED";
-                    };
-                    final String suffix = result == PhysicsAssemblerBlockEntity.PreparationResult.VALIDATED
-                            ? "; stable validations=" + assembler.getStableValidationCount()
-                                    + "; dry-run handoff is stable"
-                            : "; interact again without changing the structure to validate";
-                    final String warning = plan.hasDeferredCreateContraptions()
-                            ? "; WARNING: intersecting moving Create contraption(s) still need upstream expansion logic"
-                            : "";
-
-                    player.displayClientMessage(Component.literal(
-                            "Physics Assembler " + verb + ": " + snapshot.blockCount()
-                                    + " block(s), sticky=" + snapshot.stickyFacing()
-                                    + ", seed=" + shortPos(snapshot.startPos())
-                                    + ", bounds " + shortPos(snapshot.min())
-                                    + " -> " + shortPos(snapshot.max())
-                                    + ", size=" + snapshot.dimensions()
-                                    + "; preflight: " + plan.summary()
-                                    + "; signature=" + Long.toUnsignedString(snapshot.signature(), 16)
-                                    + suffix + warning
-                                    + "; interaction=" + interactionCount), false);
+                    result = assembler.nudgeAssembly(player.getDirection());
                 } else {
-                    assembler.recordFailedScan(scan.error());
-                    player.displayClientMessage(Component.literal(
-                            "Physics Assembler ERROR: " + scan.error()
-                                    + " at " + shortPos(scan.problemPos())
-                                    + "; prepared snapshot cleared"), false);
+                    result = assembler.toggleAssembly();
                 }
+
+                final String prefix = result.successful() ? "Physics Assembler: " : "Physics Assembler ERROR: ";
+                final String count = result.blockCount() > 0 ? " [" + result.blockCount() + " blocks]" : "";
+                player.displayClientMessage(Component.literal(prefix + result.message() + count), false);
             }
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
     }
 
-    /**
-     * Match Create's 1.20.1 IWrenchable behavior rather than forcing every
-     * click to rotate the horizontal-facing property. Floor and ceiling mounts
-     * can rotate around Y. A wall mount has no independent roll property in
-     * upstream Simulated: its horizontal FACING also identifies its support wall.
-     */
     @Override
     public BlockState getRotatedBlockState(final BlockState originalState, final Direction targetedFace) {
         return IWrenchable.super.getRotatedBlockState(originalState, targetedFace);
@@ -193,23 +145,36 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
 
     @Override
     public InteractionResult onWrenched(final BlockState state, final UseOnContext context) {
+        if (context.getLevel().getBlockEntity(context.getClickedPos()) instanceof final PhysicsAssemblerBlockEntity assembler
+                && assembler.isHoldingAssembly()) {
+            if (!context.getLevel().isClientSide && context.getPlayer() != null) {
+                context.getPlayer().displayClientMessage(Component.literal(
+                        "Physics Assembler: disassemble the active structure before wrenching the controller."), true);
+            }
+            return InteractionResult.SUCCESS;
+        }
+
         final BlockState rotated = getRotatedBlockState(state, context.getClickedFace());
         final boolean wallOrientationLocked = state.getValue(FACE) == AttachFace.WALL && rotated == state;
         final InteractionResult result = IWrenchable.super.onWrenched(state, context);
 
-        if (!context.getLevel().isClientSide) {
-            if (wallOrientationLocked && context.getPlayer() != null) {
-                context.getPlayer().displayClientMessage(Component.literal(
-                        "Physics Assembler: wall orientation is support-locked (upstream behavior); floor/ceiling mounts can be wrench-rotated."), true);
-            }
-            if (result.consumesAction()) {
-                final BlockEntity blockEntity = context.getLevel().getBlockEntity(context.getClickedPos());
-                if (blockEntity instanceof final PhysicsAssemblerBlockEntity assembler) {
-                    assembler.clearPreparedAssembly();
-                }
-            }
+        if (!context.getLevel().isClientSide && wallOrientationLocked && context.getPlayer() != null) {
+            context.getPlayer().displayClientMessage(Component.literal(
+                    "Physics Assembler: wall orientation is support-locked; floor/ceiling mounts can rotate."), true);
         }
         return result;
+    }
+
+    @Override
+    public void onRemove(final BlockState state, final Level level, final BlockPos pos,
+                         final BlockState newState, final boolean movedByPiston) {
+        if (!state.is(newState.getBlock()) && !level.isClientSide) {
+            final BlockEntity blockEntity = level.getBlockEntity(pos);
+            if (blockEntity instanceof final PhysicsAssemblerBlockEntity assembler && assembler.hasActiveAssembly()) {
+                assembler.disassembleActive();
+            }
+        }
+        super.onRemove(state, level, pos, newState, movedByPiston);
     }
 
     @Override
@@ -240,13 +205,6 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
             case CEILING -> Direction.UP;
             case WALL -> state.getValue(FACING).getOpposite();
         };
-    }
-
-    private static String shortPos(final BlockPos pos) {
-        if (pos == null) {
-            return "?";
-        }
-        return "[" + pos.getX() + "," + pos.getY() + "," + pos.getZ() + "]";
     }
 
     @Override
