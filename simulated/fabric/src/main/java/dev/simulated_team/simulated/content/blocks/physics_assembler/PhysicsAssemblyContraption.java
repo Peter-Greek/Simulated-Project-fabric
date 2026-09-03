@@ -1,6 +1,7 @@
 package dev.simulated_team.simulated.content.blocks.physics_assembler;
 
 import com.simibubi.create.api.contraption.ContraptionType;
+import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.AssemblyException;
 import com.simibubi.create.content.contraptions.TranslatingContraption;
 import dev.simulated_team.simulated.fabric.SimulatedFabricContent;
@@ -33,6 +34,19 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
             return false;
         }
         return !getBlocks().isEmpty();
+    }
+
+    /**
+     * Create captures movement-capable blocks with a null MovementContext and
+     * expects startMoving() to populate those contexts before the contraption
+     * is serialized for its spawn packet or a world save. Native Create
+     * controllers do this as part of their startup path; our temporary Physics
+     * Assembler transport has to do it explicitly.
+     */
+    @Override
+    public void onEntityCreated(final AbstractContraptionEntity entity) {
+        super.onEntityCreated(entity);
+        startMoving(entity.level());
     }
 
     /**
