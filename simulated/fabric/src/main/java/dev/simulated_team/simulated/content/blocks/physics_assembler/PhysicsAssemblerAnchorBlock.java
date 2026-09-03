@@ -7,7 +7,6 @@ import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -46,10 +45,5 @@ public final class PhysicsAssemblerAnchorBlock extends Block implements EntityBl
     public VoxelShape getCollisionShape(final BlockState state, final BlockGetter level, final BlockPos pos,
                                         final CollisionContext context) {
         return Shapes.empty();
-    }
-
-    @Override
-    public PushReaction getPistonPushReaction(final BlockState state) {
-        return PushReaction.BLOCK;
     }
 }
