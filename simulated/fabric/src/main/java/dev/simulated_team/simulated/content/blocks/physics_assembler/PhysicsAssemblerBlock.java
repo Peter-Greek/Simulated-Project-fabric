@@ -33,9 +33,9 @@ import net.minecraft.world.phys.shapes.VoxelShape;
  * Fabric 1.20.1 Physics Assembler.
  *
  * Normal empty-hand use toggles a real moving Create contraption instead of a
- * dry-run validation state. Sneak-use nudges an active assembly one horizontal
- * block; this is temporary transport control until Sable supplies rigid-body
- * physics on 1.20.1.
+ * dry-run validation state. Sneak-use nudges an active assembly one block in
+ * the direction the player is looking; this is temporary transport control
+ * until Sable supplies rigid-body physics on 1.20.1.
  */
 public final class PhysicsAssemblerBlock extends Block implements EntityBlock, IWrenchable {
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
@@ -73,8 +73,6 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
 
     @Override
     public boolean canSurvive(final BlockState state, final LevelReader level, final BlockPos pos) {
-        // During the compatibility transport phase the controller stays in the
-        // parent world while its supporting structure is a moving entity.
         if (level.getBlockEntity(pos) instanceof final PhysicsAssemblerBlockEntity assembler
                 && assembler.isHoldingAssembly()) {
             return true;
@@ -125,7 +123,7 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
 
                 final PhysicsAssemblerBlockEntity.OperationResult result;
                 if (player.isShiftKeyDown()) {
-                    result = assembler.nudgeAssembly(player.getDirection());
+                    result = assembler.nudgeAssembly(nudgeDirection(player));
                 } else {
                     result = assembler.toggleAssembly();
                 }
@@ -136,6 +134,17 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
             }
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    private static Direction nudgeDirection(final Player player) {
+        final float pitch = player.getXRot();
+        if (pitch <= -50.0F) {
+            return Direction.UP;
+        }
+        if (pitch >= 50.0F) {
+            return Direction.DOWN;
+        }
+        return player.getDirection();
     }
 
     @Override
