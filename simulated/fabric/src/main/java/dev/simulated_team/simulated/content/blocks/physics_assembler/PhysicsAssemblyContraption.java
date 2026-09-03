@@ -107,12 +107,18 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
     }
 
     /**
-     * The invisible anchor is the actual ControlledContraptionEntity controller.
-     * It is intentionally excluded from the moving block map.
+     * There is deliberately no anchoring block inside this moving contraption.
+     *
+     * Create normally excludes its controller/anchor from both capture and
+     * restoration. In this port local position zero is the real Physics
+     * Assembler and must be removed, rendered, moved and restored like every
+     * other captured block. The stable Create controller is a separate invisible
+     * PHYSICS_ASSEMBLER_ANCHOR block in the parent world and is never present in
+     * this contraption's block map.
      */
     @Override
     protected boolean isAnchoringBlockAt(final BlockPos pos) {
-        return controllerPos != null && controllerPos.equals(pos);
+        return false;
     }
 
     @Override
