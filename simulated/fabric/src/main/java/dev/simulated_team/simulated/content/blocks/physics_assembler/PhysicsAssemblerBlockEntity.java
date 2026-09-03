@@ -6,6 +6,7 @@ import com.simibubi.create.content.contraptions.ContraptionCollider;
 import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
 import com.simibubi.create.content.contraptions.IControlContraption;
 import dev.simulated_team.simulated.fabric.SimulatedFabricContent;
+import dev.simulated_team.simulated.fabric.SimulatedFabricNetworking;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -93,10 +94,6 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
 
             final int blockCount = contraption.getBlocks().size();
 
-            // Mark active before world removal. The support block immediately
-            // next to the assembler is normally part of the moving structure;
-            // this prevents support updates from deleting the fixed controller
-            // while that block is being captured.
             assemblyState = AssemblyState.ASSEMBLING;
             activeBlockCount = blockCount;
             lastError = "";
@@ -161,9 +158,6 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         final boolean translated = dx != 0 || dy != 0 || dz != 0;
         final BlockPos targetController = worldPosition.offset(dx, dy, dz);
 
-        // The controller was deliberately excluded from the captured structure,
-        // so its translated destination should be empty until disassembly puts
-        // the neighboring support block back. Refuse to overwrite real blocks.
         if (relocateController && translated && !level.isEmptyBlock(targetController)) {
             return OperationResult.failure(
                     "cannot disassemble: translated assembler position is occupied at "
@@ -180,8 +174,6 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
                         "structure was placed, but the assembler controller could not relocate");
             }
 
-            // State was cleared before this removal, so onRemove will not try to
-            // disassemble the already-placed contraption a second time.
             level.removeBlock(worldPosition, false);
             return OperationResult.success(
                     "disassembled back into world blocks; assembler moved "
@@ -194,8 +186,9 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
 
     /**
      * Compatibility-only movement control for the first real transport build.
-     * Sneak-use moves the live Create contraption one block horizontally with
-     * collision checks. Sable will replace this with actual rigid-body motion.
+     * Sneak-use moves the live Create contraption one block in the requested
+     * cardinal direction with collision checks. Sable will replace this with
+     * actual rigid-body motion.
      */
     public OperationResult nudgeAssembly(final Direction direction) {
         final ControlledContraptionEntity active = getActiveContraption();
@@ -203,8 +196,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
             return OperationResult.failure("assemble a structure first");
         }
 
-        final Direction horizontal = direction.getAxis().isHorizontal() ? direction : Direction.NORTH;
-        final Vec3 step = Vec3.atLowerCornerOf(horizontal.getNormal()).scale(0.25D);
+        final Vec3 step = Vec3.atLowerCornerOf(direction.getNormal()).scale(0.25D);
 
         for (int i = 0; i < 4; i++) {
             final Vec3 previous = active.position();
@@ -218,7 +210,14 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         }
 
         active.setContraptionMotion(Vec3.ZERO);
-        return OperationResult.success("moved live assembly 1 block " + horizontal.getName(), activeBlockCount);
+
+        // ControlledContraptionEntity ignores vanilla client interpolation and
+        // teleport updates because Create normally drives it from a synchronized
+        // controller. Our temporary transport moves it directly, so mirror the
+        // authoritative server position explicitly to every tracking client.
+        SimulatedFabricNetworking.syncContraptionPosition(active);
+
+        return OperationResult.success("moved live assembly 1 block " + direction.getName(), activeBlockCount);
     }
 
     public boolean isHoldingAssembly() {
@@ -342,8 +341,6 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         movedContraptionId = tag.hasUUID("PortMovedContraption") ? tag.getUUID("PortMovedContraption") : null;
         movedContraption = null;
 
-        // Old .5 PREPARED/VALIDATED data is intentionally not trusted as a
-        // live assembly. Only an entity UUID represents real assembled state.
         if (movedContraptionId == null && assemblyState == AssemblyState.ASSEMBLED) {
             assemblyState = AssemblyState.IDLE;
             activeBlockCount = 0;
