@@ -10,6 +10,9 @@
   "entrypoints": {
     "main": [
       "dev.simulated_team.simulated.fabric.SimulatedFabric"
+    ],
+    "client": [
+      "dev.simulated_team.simulated.fabric.SimulatedFabricClient"
     ]
   },
   "depends": {
