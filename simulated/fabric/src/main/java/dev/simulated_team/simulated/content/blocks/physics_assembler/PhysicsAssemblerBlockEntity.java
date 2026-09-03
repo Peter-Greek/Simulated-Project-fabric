@@ -21,8 +21,8 @@ import java.util.UUID;
  *
  * This milestone performs real world mutation. Until Sable's sublevel/physics
  * backend is available on 1.20.1, a Create ControlledContraptionEntity is used
- * as the transport layer. The controller remains fixed in the world while the
- * captured structure becomes a live moving contraption and can be placed back.
+ * as the transport layer. The assembler remains a world-side controller while
+ * the structure is moving, then follows the structure when it is disassembled.
  */
 public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IControlContraption {
     public enum AssemblyState {
@@ -95,8 +95,8 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
 
             // Mark active before world removal. The support block immediately
             // next to the assembler is normally part of the moving structure;
-            // this prevents vanilla support updates from deleting the fixed
-            // compatibility controller while that block is being captured.
+            // this prevents support updates from deleting the fixed controller
+            // while that block is being captured.
             assemblyState = AssemblyState.ASSEMBLING;
             activeBlockCount = blockCount;
             lastError = "";
@@ -131,6 +131,20 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
     }
 
     public OperationResult disassembleActive() {
+        return disassembleActive(true);
+    }
+
+    /**
+     * Places the moving structure back into the world. When the player is
+     * intentionally toggling the assembler, the controller follows the exact
+     * integral translation of the temporary Create transport. When the block is
+     * being destroyed, relocation is disabled so vanilla can finish the break.
+     */
+    public OperationResult disassembleActive(final boolean relocateController) {
+        if (level == null || level.isClientSide) {
+            return OperationResult.failure("server level unavailable");
+        }
+
         final ControlledContraptionEntity active = getActiveContraption();
         if (active == null) {
             clearActiveState();
@@ -138,9 +152,43 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         }
 
         final int placedBlocks = activeBlockCount;
+        final BlockState controllerState = getBlockState();
+        final Vec3 originalAnchor = Vec3.atLowerCornerOf(active.getContraption().anchor);
+        final Vec3 translation = active.position().subtract(originalAnchor);
+        final int dx = (int) Math.round(translation.x);
+        final int dy = (int) Math.round(translation.y);
+        final int dz = (int) Math.round(translation.z);
+        final boolean translated = dx != 0 || dy != 0 || dz != 0;
+        final BlockPos targetController = worldPosition.offset(dx, dy, dz);
+
+        // The controller was deliberately excluded from the captured structure,
+        // so its translated destination should be empty until disassembly puts
+        // the neighboring support block back. Refuse to overwrite real blocks.
+        if (relocateController && translated && !level.isEmptyBlock(targetController)) {
+            return OperationResult.failure(
+                    "cannot disassemble: translated assembler position is occupied at "
+                            + targetController.getX() + "," + targetController.getY() + "," + targetController.getZ());
+        }
+
         active.setContraptionMotion(Vec3.ZERO);
         active.disassemble();
         clearActiveState();
+
+        if (relocateController && translated) {
+            if (!level.setBlock(targetController, controllerState, 3)) {
+                return OperationResult.failure(
+                        "structure was placed, but the assembler controller could not relocate");
+            }
+
+            // State was cleared before this removal, so onRemove will not try to
+            // disassemble the already-placed contraption a second time.
+            level.removeBlock(worldPosition, false);
+            return OperationResult.success(
+                    "disassembled back into world blocks; assembler moved "
+                            + dx + "," + dy + "," + dz,
+                    placedBlocks);
+        }
+
         return OperationResult.success("disassembled back into world blocks", placedBlocks);
     }
 
