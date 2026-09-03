@@ -121,22 +121,16 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
                     return InteractionResult.CONSUME;
                 }
 
-                final PhysicsAssemblerBlockEntity.OperationResult result;
-                if (player.isShiftKeyDown()) {
-                    result = assembler.nudgeAssembly(nudgeDirection(player));
-                } else {
-                    result = assembler.toggleAssembly();
-                }
-
-                final String prefix = result.successful() ? "Physics Assembler: " : "Physics Assembler ERROR: ";
-                final String count = result.blockCount() > 0 ? " [" + result.blockCount() + " blocks]" : "";
-                player.displayClientMessage(Component.literal(prefix + result.message() + count), false);
+                final PhysicsAssemblerBlockEntity.OperationResult result = player.isShiftKeyDown()
+                        ? assembler.nudgeAssembly(nudgeDirection(player))
+                        : assembler.toggleAssembly();
+                displayOperationResult(player, result);
             }
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
     }
 
-    private static Direction nudgeDirection(final Player player) {
+    public static Direction nudgeDirection(final Player player) {
         final float pitch = player.getXRot();
         if (pitch <= -50.0F) {
             return Direction.UP;
@@ -145,6 +139,13 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
             return Direction.DOWN;
         }
         return player.getDirection();
+    }
+
+    public static void displayOperationResult(final Player player,
+                                              final PhysicsAssemblerBlockEntity.OperationResult result) {
+        final String prefix = result.successful() ? "Physics Assembler: " : "Physics Assembler ERROR: ";
+        final String count = result.blockCount() > 0 ? " [" + result.blockCount() + " blocks]" : "";
+        player.displayClientMessage(Component.literal(prefix + result.message() + count), false);
     }
 
     @Override
