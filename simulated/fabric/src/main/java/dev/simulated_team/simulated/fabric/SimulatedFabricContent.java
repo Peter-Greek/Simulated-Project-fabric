@@ -1,9 +1,13 @@
 package dev.simulated_team.simulated.fabric;
 
+import com.simibubi.create.api.contraption.ContraptionType;
+import com.simibubi.create.api.registry.CreateBuiltInRegistries;
 import com.simibubi.create.content.processing.sequenced.SequencedAssemblyItem;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlock;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlockEntity;
+import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblyContraption;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
+import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -32,10 +36,18 @@ public final class SimulatedFabricContent {
     public static final BlockEntityType<PhysicsAssemblerBlockEntity> PHYSICS_ASSEMBLER_BLOCK_ENTITY =
             BlockEntityType.Builder.of(PhysicsAssemblerBlockEntity::new, PHYSICS_ASSEMBLER).build(null);
 
+    private static Holder.Reference<ContraptionType> physicsAssemblyContraptionType;
+
     private SimulatedFabricContent() {
     }
 
     public static void register() {
+        final ContraptionType contraptionType = new ContraptionType(PhysicsAssemblyContraption::new);
+        physicsAssemblyContraptionType = Registry.registerForHolder(
+                CreateBuiltInRegistries.CONTRAPTION_TYPE,
+                id("physics_assembly"),
+                contraptionType);
+
         registerItem("gyroscopic_mechanism", GYROSCOPIC_MECHANISM);
         registerItem("incomplete_gyroscopic_mechanism", INCOMPLETE_GYROSCOPIC_MECHANISM);
         registerItem("engine_assembly", ENGINE_ASSEMBLY);
@@ -55,6 +67,13 @@ public final class SimulatedFabricContent {
                             output.accept(ENGINE_ASSEMBLY);
                         })
                         .build());
+    }
+
+    public static ContraptionType physicsAssemblyContraptionType() {
+        if (physicsAssemblyContraptionType == null) {
+            throw new IllegalStateException("Physics Assembly contraption type has not been registered yet");
+        }
+        return physicsAssemblyContraptionType.value();
     }
 
     private static void registerItem(final String path, final Item item) {
