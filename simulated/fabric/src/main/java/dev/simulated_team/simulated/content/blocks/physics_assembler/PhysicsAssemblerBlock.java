@@ -32,10 +32,10 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 /**
  * Fabric 1.20.1 Physics Assembler.
  *
- * Normal empty-hand use now toggles a real moving Create contraption instead of
- * advancing a dry-run validation state. Sneak-use nudges an active assembly one
- * block horizontally; this is temporary transport control until Sable supplies
- * rigid-body physics on 1.20.1.
+ * Normal empty-hand use toggles a real moving Create contraption instead of a
+ * dry-run validation state. Sneak-use nudges an active assembly one horizontal
+ * block; this is temporary transport control until Sable supplies rigid-body
+ * physics on 1.20.1.
  */
 public final class PhysicsAssemblerBlock extends Block implements EntityBlock, IWrenchable {
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
@@ -171,7 +171,7 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
         if (!state.is(newState.getBlock()) && !level.isClientSide) {
             final BlockEntity blockEntity = level.getBlockEntity(pos);
             if (blockEntity instanceof final PhysicsAssemblerBlockEntity assembler && assembler.hasActiveAssembly()) {
-                assembler.disassembleActive();
+                assembler.disassembleActive(false);
             }
         }
         super.onRemove(state, level, pos, newState, movedByPiston);
