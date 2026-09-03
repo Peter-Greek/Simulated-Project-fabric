@@ -1,46 +1,54 @@
 package dev.simulated_team.simulated.content.blocks.physics_assembler;
 
+import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
+import com.simibubi.create.content.contraptions.AssemblyException;
+import com.simibubi.create.content.contraptions.ContraptionCollider;
+import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
+import com.simibubi.create.content.contraptions.IControlContraption;
 import dev.simulated_team.simulated.fabric.SimulatedFabricContent;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.UUID;
 
 /**
- * 1.20.1 Physics Assembler block entity.
+ * Fabric 1.20.1 Physics Assembler controller.
  *
- * Until Sable itself is backported, this owns the complete pre-physics assembly
- * lifecycle: discovery, preparation, repeat validation, invalidation and
- * persistence. Only compact metadata is saved; block positions are rescanned
- * from the world before any future physics handoff.
+ * This milestone performs real world mutation. Until Sable's sublevel/physics
+ * backend is available on 1.20.1, a Create ControlledContraptionEntity is used
+ * as the transport layer. The controller remains fixed in the world while the
+ * captured structure becomes a live moving contraption and can be placed back.
  */
-public final class PhysicsAssemblerBlockEntity extends BlockEntity {
+public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IControlContraption {
     public enum AssemblyState {
         IDLE,
-        PREPARED,
-        VALIDATED,
+        ASSEMBLING,
+        ASSEMBLED,
         ERROR
     }
 
-    public enum PreparationResult {
-        PREPARED,
-        UPDATED,
-        VALIDATED
+    public record OperationResult(boolean successful, String message, int blockCount) {
+        static OperationResult success(final String message, final int blockCount) {
+            return new OperationResult(true, message, blockCount);
+        }
+
+        static OperationResult failure(final String message) {
+            return new OperationResult(false, message, 0);
+        }
     }
 
-    private int interactionCount;
-    private int lastScannedBlockCount;
-    private boolean lastScanSuccessful;
-    private int stableValidationCount;
     private AssemblyState assemblyState = AssemblyState.IDLE;
-    private PreparedAssembly preparedAssembly;
+    private ControlledContraptionEntity movedContraption;
+    private UUID movedContraptionId;
+    private int activeBlockCount;
+    private int interactionCount;
     private String lastError = "";
 
-    // Client input can occasionally reach 1.20.1 block use through more than
-    // one hand/path during the same tick. This is intentionally transient: it
-    // only prevents one physical click from advancing the test state twice.
     private long lastProcessedGameTime = Long.MIN_VALUE;
     private UUID lastProcessedPlayer;
 
@@ -52,127 +60,245 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity {
         if (gameTime == lastProcessedGameTime && playerId.equals(lastProcessedPlayer)) {
             return false;
         }
-
         lastProcessedGameTime = gameTime;
         lastProcessedPlayer = playerId;
+        interactionCount++;
+        setChanged();
         return true;
     }
 
-    public int recordInteraction() {
-        interactionCount++;
-        setChanged();
-        return interactionCount;
+    public OperationResult toggleAssembly() {
+        final ControlledContraptionEntity active = getActiveContraption();
+        if (active != null) {
+            return disassembleActive();
+        }
+        return assembleFromWorld();
     }
 
-    public PreparationResult prepare(final PreparedAssembly snapshot) {
-        final boolean hadPreparedAssembly = preparedAssembly != null;
-        final boolean unchanged = snapshot.equals(preparedAssembly);
-
-        preparedAssembly = snapshot;
-        lastScannedBlockCount = snapshot.blockCount();
-        lastScanSuccessful = true;
-        lastError = "";
-
-        if (unchanged) {
-            stableValidationCount++;
-            assemblyState = AssemblyState.VALIDATED;
-            setChanged();
-            return PreparationResult.VALIDATED;
+    private OperationResult assembleFromWorld() {
+        if (level == null || level.isClientSide) {
+            return OperationResult.failure("server level unavailable");
         }
 
-        stableValidationCount = 0;
-        assemblyState = AssemblyState.PREPARED;
-        setChanged();
-        return hadPreparedAssembly ? PreparationResult.UPDATED : PreparationResult.PREPARED;
-    }
-
-    public void recordFailedScan(final String error) {
-        lastScannedBlockCount = 0;
-        lastScanSuccessful = false;
-        stableValidationCount = 0;
-        assemblyState = AssemblyState.ERROR;
-        preparedAssembly = null;
-        lastError = error == null ? "Unknown scan error" : error;
-        setChanged();
-    }
-
-    public boolean clearPreparedAssembly() {
-        final boolean changed = preparedAssembly != null || assemblyState != AssemblyState.IDLE || !lastError.isEmpty();
-        preparedAssembly = null;
-        lastScannedBlockCount = 0;
-        lastScanSuccessful = false;
-        stableValidationCount = 0;
-        assemblyState = AssemblyState.IDLE;
-        lastError = "";
-        if (changed) {
-            setChanged();
+        final BlockPos seed = worldPosition.relative(PhysicsAssemblerBlock.getStickyFacing(getBlockState()));
+        if (level.getBlockState(seed).isAir()) {
+            return fail("nothing is attached to the assembler");
         }
-        return changed;
+
+        try {
+            final PhysicsAssemblyContraption contraption = new PhysicsAssemblyContraption(worldPosition);
+            if (!contraption.assemble(level, seed) || contraption.getBlocks().isEmpty()) {
+                return fail("no movable structure was found");
+            }
+
+            final int blockCount = contraption.getBlocks().size();
+
+            // Mark active before world removal. The support block immediately
+            // next to the assembler is normally part of the moving structure;
+            // this prevents vanilla support updates from deleting the fixed
+            // compatibility controller while that block is being captured.
+            assemblyState = AssemblyState.ASSEMBLING;
+            activeBlockCount = blockCount;
+            lastError = "";
+            setChanged();
+
+            contraption.removeBlocksFromWorld(level, BlockPos.ZERO);
+
+            final ControlledContraptionEntity entity = ControlledContraptionEntity.create(level, this, contraption);
+            final Vec3 anchor = Vec3.atLowerCornerOf(contraption.anchor);
+            entity.setPos(anchor.x, anchor.y, anchor.z);
+            entity.setContraptionMotion(Vec3.ZERO);
+
+            if (!level.addFreshEntity(entity)) {
+                entity.disassemble();
+                return fail("Create rejected the moving contraption entity");
+            }
+
+            attach(entity);
+            assemblyState = AssemblyState.ASSEMBLED;
+            lastError = "";
+            setChanged();
+            return OperationResult.success(
+                    "assembled into a live Create transport contraption (Sable physics backend pending)",
+                    blockCount);
+        } catch (final AssemblyException exception) {
+            final String detail = exception.getMessage();
+            return fail(detail == null || detail.isBlank() ? "Create rejected the structure" : detail);
+        } catch (final RuntimeException exception) {
+            return fail("assembly failed: " + exception.getClass().getSimpleName()
+                    + (exception.getMessage() == null ? "" : " - " + exception.getMessage()));
+        }
     }
 
-    public int getInteractionCount() {
-        return interactionCount;
+    public OperationResult disassembleActive() {
+        final ControlledContraptionEntity active = getActiveContraption();
+        if (active == null) {
+            clearActiveState();
+            return OperationResult.failure("no live assembly is attached");
+        }
+
+        final int placedBlocks = activeBlockCount;
+        active.setContraptionMotion(Vec3.ZERO);
+        active.disassemble();
+        clearActiveState();
+        return OperationResult.success("disassembled back into world blocks", placedBlocks);
     }
 
-    public int getLastScannedBlockCount() {
-        return lastScannedBlockCount;
+    /**
+     * Compatibility-only movement control for the first real transport build.
+     * Sneak-use moves the live Create contraption one block horizontally with
+     * collision checks. Sable will replace this with actual rigid-body motion.
+     */
+    public OperationResult nudgeAssembly(final Direction direction) {
+        final ControlledContraptionEntity active = getActiveContraption();
+        if (active == null) {
+            return OperationResult.failure("assemble a structure first");
+        }
+
+        final Direction horizontal = direction.getAxis().isHorizontal() ? direction : Direction.NORTH;
+        final Vec3 step = Vec3.atLowerCornerOf(horizontal.getNormal()).scale(0.25D);
+
+        for (int i = 0; i < 4; i++) {
+            final Vec3 previous = active.position();
+            active.setContraptionMotion(step);
+            active.move(step.x, step.y, step.z);
+            if (ContraptionCollider.collideBlocks(active)) {
+                active.setPos(previous.x, previous.y, previous.z);
+                active.setContraptionMotion(Vec3.ZERO);
+                return OperationResult.failure("movement blocked by world collision");
+            }
+        }
+
+        active.setContraptionMotion(Vec3.ZERO);
+        return OperationResult.success("moved live assembly 1 block " + horizontal.getName(), activeBlockCount);
     }
 
-    public boolean wasLastScanSuccessful() {
-        return lastScanSuccessful;
+    public boolean isHoldingAssembly() {
+        return assemblyState == AssemblyState.ASSEMBLING || assemblyState == AssemblyState.ASSEMBLED;
     }
 
-    public int getStableValidationCount() {
-        return stableValidationCount;
+    public boolean hasActiveAssembly() {
+        return getActiveContraption() != null;
     }
 
     public AssemblyState getAssemblyState() {
         return assemblyState;
     }
 
-    public PreparedAssembly getPreparedAssembly() {
-        return preparedAssembly;
+    public int getActiveBlockCount() {
+        return activeBlockCount;
+    }
+
+    public int getInteractionCount() {
+        return interactionCount;
     }
 
     public String getLastError() {
         return lastError;
     }
 
+    private OperationResult fail(final String message) {
+        assemblyState = AssemblyState.ERROR;
+        lastError = message;
+        activeBlockCount = 0;
+        movedContraption = null;
+        movedContraptionId = null;
+        setChanged();
+        return OperationResult.failure(message);
+    }
+
+    private ControlledContraptionEntity getActiveContraption() {
+        if (movedContraption != null) {
+            if (movedContraption.isAlive()) {
+                return movedContraption;
+            }
+            movedContraption = null;
+        }
+
+        if (movedContraptionId != null && level instanceof final ServerLevel serverLevel) {
+            if (serverLevel.getEntity(movedContraptionId) instanceof final ControlledContraptionEntity entity
+                    && entity.isAlive()) {
+                movedContraption = entity;
+                return entity;
+            }
+        }
+        return null;
+    }
+
+    private void clearActiveState() {
+        movedContraption = null;
+        movedContraptionId = null;
+        activeBlockCount = 0;
+        assemblyState = AssemblyState.IDLE;
+        lastError = "";
+        setChanged();
+    }
+
+    @Override
+    public boolean isAttachedTo(final AbstractContraptionEntity contraption) {
+        return movedContraption == contraption
+                || movedContraptionId != null && movedContraptionId.equals(contraption.getUUID());
+    }
+
+    @Override
+    public void attach(final ControlledContraptionEntity contraption) {
+        movedContraption = contraption;
+        movedContraptionId = contraption.getUUID();
+        activeBlockCount = contraption.getContraption() == null
+                ? activeBlockCount
+                : contraption.getContraption().getBlocks().size();
+        assemblyState = AssemblyState.ASSEMBLED;
+        lastError = "";
+        setChanged();
+    }
+
+    @Override
+    public void onStall() {
+        lastError = "Create transport contraption stalled on a collision";
+        setChanged();
+    }
+
+    @Override
+    public boolean isValid() {
+        return !isRemoved();
+    }
+
+    @Override
+    public BlockPos getBlockPosition() {
+        return worldPosition;
+    }
+
     @Override
     protected void saveAdditional(final CompoundTag tag) {
         super.saveAdditional(tag);
-        tag.putInt("PortInteractionCount", interactionCount);
-        tag.putInt("PortLastScannedBlockCount", lastScannedBlockCount);
-        tag.putBoolean("PortLastScanSuccessful", lastScanSuccessful);
-        tag.putInt("PortStableValidationCount", stableValidationCount);
         tag.putString("PortAssemblyState", assemblyState.name());
+        tag.putInt("PortActiveBlockCount", activeBlockCount);
+        tag.putInt("PortInteractionCount", interactionCount);
         tag.putString("PortLastError", lastError);
-        if (preparedAssembly != null) {
-            tag.put("PortPreparedAssembly", preparedAssembly.write());
+        if (movedContraptionId != null) {
+            tag.putUUID("PortMovedContraption", movedContraptionId);
         }
     }
 
     @Override
     public void load(final CompoundTag tag) {
         super.load(tag);
-        interactionCount = tag.getInt("PortInteractionCount");
-        lastScannedBlockCount = tag.getInt("PortLastScannedBlockCount");
-        lastScanSuccessful = tag.getBoolean("PortLastScanSuccessful");
-        stableValidationCount = tag.getInt("PortStableValidationCount");
-        lastError = tag.getString("PortLastError");
-
         try {
             assemblyState = AssemblyState.valueOf(tag.getString("PortAssemblyState"));
         } catch (final IllegalArgumentException ignored) {
             assemblyState = AssemblyState.IDLE;
         }
+        activeBlockCount = tag.getInt("PortActiveBlockCount");
+        interactionCount = tag.getInt("PortInteractionCount");
+        lastError = tag.getString("PortLastError");
+        movedContraptionId = tag.hasUUID("PortMovedContraption") ? tag.getUUID("PortMovedContraption") : null;
+        movedContraption = null;
 
-        preparedAssembly = tag.contains("PortPreparedAssembly")
-                ? PreparedAssembly.read(tag.getCompound("PortPreparedAssembly"))
-                : null;
-
-        if (preparedAssembly == null && assemblyState != AssemblyState.ERROR) {
+        // Old .5 PREPARED/VALIDATED data is intentionally not trusted as a
+        // live assembly. Only an entity UUID represents real assembled state.
+        if (movedContraptionId == null && assemblyState == AssemblyState.ASSEMBLED) {
             assemblyState = AssemblyState.IDLE;
+            activeBlockCount = 0;
         }
     }
 }
