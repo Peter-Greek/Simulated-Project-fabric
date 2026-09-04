@@ -9,7 +9,8 @@
   "environment": "*",
   "entrypoints": {
     "main": [
-      "dev.simulated_team.simulated.fabric.SimulatedFabric"
+      "dev.simulated_team.simulated.fabric.SimulatedFabric",
+      "dev.simulated_team.simulated.fabric.SimulatedFabricFlightInitializer"
     ],
     "client": [
       "dev.simulated_team.simulated.fabric.SimulatedFabricClient"
