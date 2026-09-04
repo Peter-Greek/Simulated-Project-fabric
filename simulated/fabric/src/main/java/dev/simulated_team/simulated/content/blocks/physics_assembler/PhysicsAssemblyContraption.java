@@ -7,8 +7,11 @@ import com.simibubi.create.content.contraptions.TranslatingContraption;
 import com.simibubi.create.content.contraptions.glue.SuperGlueEntity;
 import dev.simulated_team.simulated.fabric.SimulatedFabricContent;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.AttachFace;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -25,6 +28,8 @@ import java.util.List;
 public final class PhysicsAssemblyContraption extends TranslatingContraption {
     private BlockPos controllerPos;
     private int payloadBlockCount;
+    private int assemblerFacingId = Direction.NORTH.get3DDataValue();
+    private int assemblerFaceOrdinal = AttachFace.FLOOR.ordinal();
     private final List<SuperGlueEntity> pendingGlues = new ArrayList<>();
 
     public PhysicsAssemblyContraption() {
@@ -45,6 +50,13 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         if (controllerPos == null || !scan.successful()) {
             return false;
         }
+
+        final BlockState assemblerState = world.getBlockState(controllerPos);
+        if (!assemblerState.is(SimulatedFabricContent.PHYSICS_ASSEMBLER)) {
+            return false;
+        }
+        assemblerFacingId = assemblerState.getValue(PhysicsAssemblerBlock.FACING).get3DDataValue();
+        assemblerFaceOrdinal = assemblerState.getValue(PhysicsAssemblerBlock.FACE).ordinal();
 
         anchor = controllerPos;
         bounds = new AABB(BlockPos.ZERO);
@@ -108,13 +120,8 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
 
     /**
      * There is deliberately no anchoring block inside this moving contraption.
-     *
-     * Create normally excludes its controller/anchor from both capture and
-     * restoration. In this port local position zero is the real Physics
-     * Assembler and must be removed, rendered, moved and restored like every
-     * other captured block. The stable Create controller is a separate invisible
-     * PHYSICS_ASSEMBLER_ANCHOR block in the parent world and is never present in
-     * this contraption's block map.
+     * The stable Create controller is a separate invisible block in the parent
+     * world and is never part of the captured block map.
      */
     @Override
     protected boolean isAnchoringBlockAt(final BlockPos pos) {
@@ -122,7 +129,7 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
     }
 
     @Override
-    public boolean canBeStabilized(final net.minecraft.core.Direction facing, final BlockPos localPos) {
+    public boolean canBeStabilized(final Direction facing, final BlockPos localPos) {
         return true;
     }
 
@@ -139,6 +146,19 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         return payloadBlockCount;
     }
 
+    /**
+     * The assembler's mount orientation is persisted independently from Create's
+     * block restoration so Simulated can recover local zero if Create omits it.
+     */
+    public BlockState getAssemblerBlockState() {
+        final Direction facing = Direction.from3DDataValue(assemblerFacingId);
+        final AttachFace[] faces = AttachFace.values();
+        final AttachFace face = faces[Math.floorMod(assemblerFaceOrdinal, faces.length)];
+        return SimulatedFabricContent.PHYSICS_ASSEMBLER.defaultBlockState()
+                .setValue(PhysicsAssemblerBlock.FACING, facing.getAxis().isHorizontal() ? facing : Direction.NORTH)
+                .setValue(PhysicsAssemblerBlock.FACE, face);
+    }
+
     @Override
     public CompoundTag writeNBT(final boolean spawnPacket) {
         final CompoundTag tag = super.writeNBT(spawnPacket);
@@ -146,6 +166,8 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
             tag.putLong("SimulatedController", controllerPos.asLong());
         }
         tag.putInt("SimulatedPayloadBlockCount", payloadBlockCount);
+        tag.putInt("SimulatedAssemblerFacing", assemblerFacingId);
+        tag.putInt("SimulatedAssemblerFace", assemblerFaceOrdinal);
         return tag;
     }
 
@@ -155,6 +177,12 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
                 ? BlockPos.of(nbt.getLong("SimulatedController"))
                 : null;
         payloadBlockCount = nbt.getInt("SimulatedPayloadBlockCount");
+        assemblerFacingId = nbt.contains("SimulatedAssemblerFacing")
+                ? nbt.getInt("SimulatedAssemblerFacing")
+                : Direction.NORTH.get3DDataValue();
+        assemblerFaceOrdinal = nbt.contains("SimulatedAssemblerFace")
+                ? nbt.getInt("SimulatedAssemblerFace")
+                : AttachFace.FLOOR.ordinal();
         super.readNBT(world, nbt, spawnData);
         if (payloadBlockCount <= 0 && !getBlocks().isEmpty()) {
             // Old .6/.7 worlds did not store a separate payload count and did
