@@ -2,20 +2,29 @@ package dev.simulated_team.simulated.fabric;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlockEntity;
+import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblyContraption;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Fabric bootstrap for the Minecraft 1.20.1 / Homestead port.
@@ -31,8 +40,40 @@ public final class SimulatedFabric implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 registerCommands(dispatcher));
 
+        // The current Create-backed transport is deliberately temporary. Do not
+        // persist its invisible controller relationship across server lifetimes;
+        // that is Sable's job once the 1.20.1 backend is ready.
+        ServerLifecycleEvents.SERVER_STOPPING.register(SimulatedFabric::recoverTemporaryPhysicsAssemblies);
+
         final boolean createLoaded = FabricLoader.getInstance().isModLoaded("create");
         LOGGER.info("Starting Create Simulated Fabric port for Homestead 1.20.1; Create loaded={}", createLoaded);
+    }
+
+    private static void recoverTemporaryPhysicsAssemblies(final MinecraftServer server) {
+        int recovered = 0;
+        int failed = 0;
+
+        for (final ServerLevel level : server.getAllLevels()) {
+            final List<ControlledContraptionEntity> transports = new ArrayList<>();
+            for (final Entity entity : level.getAllEntities()) {
+                if (entity instanceof final ControlledContraptionEntity controlled
+                        && controlled.getContraption() instanceof PhysicsAssemblyContraption) {
+                    transports.add(controlled);
+                }
+            }
+
+            for (final ControlledContraptionEntity transport : transports) {
+                if (PhysicsAssemblerBlockEntity.recoverTemporaryTransport(level, transport)) {
+                    recovered++;
+                } else {
+                    failed++;
+                }
+            }
+        }
+
+        if (recovered > 0 || failed > 0) {
+            LOGGER.info("Physics Assembler shutdown recovery: recovered={}, failed={}", recovered, failed);
+        }
     }
 
     private static void registerCommands(final CommandDispatcher<CommandSourceStack> dispatcher) {
