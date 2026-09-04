@@ -4,5 +4,13 @@
   "item.simulated.gyroscopic_mechanism": "Gyroscopic Mechanism",
   "item.simulated.incomplete_gyroscopic_mechanism": "Incomplete Gyroscopic Mechanism",
   "item.simulated.engine_assembly": "Engine Assembly",
-  "item.simulated.incomplete_engine_assembly": "Incomplete Engine Assembly"
+  "item.simulated.incomplete_engine_assembly": "Incomplete Engine Assembly",
+  "key.categories.simulated": "Create Simulated",
+  "key.simulated.flight_toggle": "Toggle Physics Assembler Flight Controls",
+  "key.simulated.flight_forward": "Fly Forward",
+  "key.simulated.flight_back": "Fly Backward",
+  "key.simulated.flight_left": "Fly Left",
+  "key.simulated.flight_right": "Fly Right",
+  "key.simulated.flight_up": "Fly Up",
+  "key.simulated.flight_down": "Fly Down"
 }
