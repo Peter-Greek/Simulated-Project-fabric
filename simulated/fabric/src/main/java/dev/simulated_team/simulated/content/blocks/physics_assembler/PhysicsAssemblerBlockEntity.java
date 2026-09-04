@@ -10,6 +10,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -119,6 +120,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
 
         if (!level.setBlock(worldPosition, SimulatedFabricContent.PHYSICS_ASSEMBLER_ANCHOR.defaultBlockState(), 3)) {
             entity.disassemble();
+            restoreAssemblerIfMissing(level, worldPosition, contraption);
             return OperationResult.failure("could not create the temporary controller anchor; structure was restored");
         }
 
@@ -126,12 +128,14 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         if (!(replacement instanceof final PhysicsAssemblerBlockEntity anchorController)) {
             level.removeBlock(worldPosition, false);
             entity.disassemble();
+            restoreAssemblerIfMissing(level, worldPosition, contraption);
             return OperationResult.failure("controller anchor block entity was not created; structure was restored");
         }
 
         if (!level.addFreshEntity(entity)) {
             level.removeBlock(worldPosition, false);
             entity.disassemble();
+            restoreAssemblerIfMissing(level, worldPosition, contraption);
             return OperationResult.failure("Create rejected the moving contraption entity; structure was restored");
         }
 
@@ -147,17 +151,6 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         return disassembleActive(true);
     }
 
-    /**
-     * Places the moving structure back into the world.
-     *
-     * New .8+ assemblies carry the assembler at local position zero and only
-     * leave an invisible anchor behind. Their disassembly therefore needs no
-     * controller teleport math at all: remove the anchor and let Create place
-     * the assembler and payload together at the entity's transform.
-     *
-     * The legacy path remains for .6/.7 saves so an already-active test assembly
-     * can still be recovered after updating the jar.
-     */
     public OperationResult disassembleActive(final boolean relocateController) {
         if (level == null || level.isClientSide) {
             return OperationResult.failure("server level unavailable");
@@ -176,17 +169,38 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         return disassembleLegacyTransport(active, relocateController);
     }
 
+    /**
+     * .10 does not trust Create to restore the assembler at local zero. Create
+     * still owns payload placement, then Simulated verifies/restores the moving
+     * assembler explicitly using the orientation persisted in the contraption.
+     */
     private OperationResult disassembleAnchoredTransport(final ControlledContraptionEntity active) {
         final int placedBlocks = activeBlockCount;
         final BlockPos anchorPos = worldPosition.immutable();
+        final PhysicsAssemblyContraption physicsAssembly = active.getContraption() instanceof PhysicsAssemblyContraption p
+                ? p
+                : null;
+        final BlockPos assemblerTarget = physicsAssembly == null
+                ? movedAssemblerTarget(active, anchorPos)
+                : movedAssemblerTarget(active, physicsAssembly.getControllerPos() == null
+                        ? anchorPos
+                        : physicsAssembly.getControllerPos());
 
         active.setContraptionMotion(Vec3.ZERO);
         level.removeBlock(anchorPos, false);
 
         try {
             active.disassemble();
+
+            if (physicsAssembly != null
+                    && !restoreAssemblerIfMissing(level, assemblerTarget, physicsAssembly)) {
+                return OperationResult.failure(
+                        "payload disassembled, but Physics Assembler could not be restored at "
+                                + assemblerTarget.getX() + "," + assemblerTarget.getY() + "," + assemblerTarget.getZ());
+            }
+
             return OperationResult.success(
-                    "disassembled moving assembler and payload directly back into world blocks",
+                    "disassembled moving assembler and payload back into world blocks",
                     placedBlocks);
         } catch (final RuntimeException exception) {
             // If Create fails before completing disassembly, recreate the anchor
@@ -240,6 +254,57 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         }
 
         return OperationResult.success("disassembled legacy transport back into world blocks", placedBlocks);
+    }
+
+    /**
+     * Shutdown recovery for the temporary Create transport. Until Sable owns the
+     * moving sub-level, live Physics Assembler transports are deliberately
+     * returned to world blocks before an integrated/dedicated server stops.
+     */
+    public static boolean recoverTemporaryTransport(final ServerLevel world,
+                                                    final ControlledContraptionEntity active) {
+        if (!(active.getContraption() instanceof final PhysicsAssemblyContraption physicsAssembly)) {
+            return false;
+        }
+
+        final BlockPos controllerPos = physicsAssembly.getControllerPos() == null
+                ? active.getContraption().anchor
+                : physicsAssembly.getControllerPos();
+        final BlockPos assemblerTarget = movedAssemblerTarget(active, controllerPos);
+
+        active.setContraptionMotion(Vec3.ZERO);
+        if (world.getBlockState(controllerPos).is(SimulatedFabricContent.PHYSICS_ASSEMBLER_ANCHOR)) {
+            world.removeBlock(controllerPos, false);
+        }
+
+        try {
+            active.disassemble();
+            return restoreAssemblerIfMissing(world, assemblerTarget, physicsAssembly);
+        } catch (final RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private static BlockPos movedAssemblerTarget(final ControlledContraptionEntity active,
+                                                 final BlockPos controllerPos) {
+        final Vec3 origin = Vec3.atLowerCornerOf(controllerPos);
+        final Vec3 translation = active.position().subtract(origin);
+        return controllerPos.offset(
+                (int) Math.round(translation.x),
+                (int) Math.round(translation.y),
+                (int) Math.round(translation.z));
+    }
+
+    private static boolean restoreAssemblerIfMissing(final Level world,
+                                                     final BlockPos target,
+                                                     final PhysicsAssemblyContraption physicsAssembly) {
+        if (world.getBlockState(target).is(SimulatedFabricContent.PHYSICS_ASSEMBLER)) {
+            return true;
+        }
+        if (!world.isEmptyBlock(target)) {
+            return false;
+        }
+        return world.setBlock(target, physicsAssembly.getAssemblerBlockState(), 3);
     }
 
     /**
