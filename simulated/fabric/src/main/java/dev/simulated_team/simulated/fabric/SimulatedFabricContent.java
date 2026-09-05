@@ -9,6 +9,8 @@ import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAsse
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlockEntity;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerMovingInteraction;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblyContraption;
+import dev.simulated_team.simulated.content.blocks.steering_wheel.SteeringWheelBlock;
+import dev.simulated_team.simulated.content.blocks.steering_wheel.SteeringWheelMovingInteraction;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
@@ -35,6 +37,9 @@ public final class SimulatedFabricContent {
             new SequencedAssemblyItem(new Item.Properties());
 
     public static final PhysicsAssemblerBlock PHYSICS_ASSEMBLER = new PhysicsAssemblerBlock(
+            BlockBehaviour.Properties.of().strength(2.5F, 6.0F).noOcclusion());
+
+    public static final SteeringWheelBlock STEERING_WHEEL = new SteeringWheelBlock(
             BlockBehaviour.Properties.of().strength(2.5F, 6.0F).noOcclusion());
 
     /**
@@ -68,14 +73,16 @@ public final class SimulatedFabricContent {
         registerItem("engine_assembly", ENGINE_ASSEMBLY);
         registerItem("incomplete_engine_assembly", INCOMPLETE_ENGINE_ASSEMBLY);
         registerBlockWithItem("physics_assembler", PHYSICS_ASSEMBLER);
+        registerBlockWithItem("steering_wheel", STEERING_WHEEL);
         registerBlock("physics_assembler_anchor", PHYSICS_ASSEMBLER_ANCHOR);
         Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, id("physics_assembler"), PHYSICS_ASSEMBLER_BLOCK_ENTITY);
 
-        // This is what makes the visible assembler on the moving contraption
-        // clickable after its world-side block has been replaced by the anchor.
         MovingInteractionBehaviour.REGISTRY.register(
                 PHYSICS_ASSEMBLER,
                 new PhysicsAssemblerMovingInteraction());
+        MovingInteractionBehaviour.REGISTRY.register(
+                STEERING_WHEEL,
+                new SteeringWheelMovingInteraction());
 
         Registry.register(
                 BuiltInRegistries.CREATIVE_MODE_TAB,
@@ -85,6 +92,7 @@ public final class SimulatedFabricContent {
                         .icon(() -> new ItemStack(PHYSICS_ASSEMBLER))
                         .displayItems((parameters, output) -> {
                             output.accept(PHYSICS_ASSEMBLER);
+                            output.accept(STEERING_WHEEL);
                             output.accept(GYROSCOPIC_MECHANISM);
                             output.accept(ENGINE_ASSEMBLY);
                         })
