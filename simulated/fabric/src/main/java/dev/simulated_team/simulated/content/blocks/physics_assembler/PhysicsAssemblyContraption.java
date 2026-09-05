@@ -10,6 +10,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.AttachFace;
 import net.minecraft.world.phys.AABB;
@@ -26,6 +27,9 @@ import java.util.List;
  * captures the exact block set discovered by the Simulated-parity scanner.
  */
 public final class PhysicsAssemblyContraption extends TranslatingContraption {
+    /** Logical rider point used by the moving Physics Assembler as a temporary helm. */
+    public static final BlockPos HELM_SEAT = BlockPos.ZERO.above();
+
     private BlockPos controllerPos;
     private int payloadBlockCount;
     private int assemblerFacingId = Direction.NORTH.get3DDataValue();
@@ -39,12 +43,6 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         this.controllerPos = controllerPos.immutable();
     }
 
-    /**
-     * Build a Create transport from the exact block set already validated by
-     * FabricAssemblyScanner. The Physics Assembler itself is captured at local
-     * position zero so it visibly moves with the structure, matching upstream
-     * Simulated's Sable sub-level behavior.
-     */
     public boolean assembleExact(final Level world,
                                  final FabricAssemblyScanner.ScanResult scan) {
         if (controllerPos == null || !scan.successful()) {
@@ -62,16 +60,18 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         bounds = new AABB(BlockPos.ZERO);
         payloadBlockCount = scan.blocks().size();
 
-        // Local zero is the moving Physics Assembler. The invisible controller
-        // anchor that replaces it in the parent world is not part of this map.
         addBlock(world, controllerPos, capture(world, controllerPos));
-
         for (final BlockPos pos : scan.blocks()) {
-            if (pos.equals(controllerPos)) {
-                continue;
+            if (!pos.equals(controllerPos)) {
+                addBlock(world, pos, capture(world, pos));
             }
-            addBlock(world, pos, capture(world, pos));
         }
+
+        // Keep the logical seat away from local zero so clicking the moving
+        // assembler still reaches its MovingInteractionBehaviour instead of
+        // Create's generic seat interaction path.
+        seats.clear();
+        seats.add(HELM_SEAT);
 
         pendingGlues.clear();
         pendingGlues.addAll(scan.glues());
@@ -84,14 +84,12 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
             return false;
         }
         payloadBlockCount = getBlocks().size();
+        if (!seats.contains(HELM_SEAT)) {
+            seats.add(HELM_SEAT);
+        }
         return !getBlocks().isEmpty();
     }
 
-    /**
-     * The scanner owns glue discovery, while Create owns glue serialization on
-     * the moving contraption. Convert the scanner's world-space glue boxes to
-     * Create's local-space representation immediately before world mutation.
-     */
     @Override
     public void removeBlocksFromWorld(final Level world, final BlockPos offset) {
         if (!pendingGlues.isEmpty()) {
@@ -107,22 +105,12 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         super.removeBlocksFromWorld(world, offset);
     }
 
-    /**
-     * Create captures movement-capable blocks with a null MovementContext and
-     * expects startMoving() to populate those contexts before the contraption
-     * is serialized for its spawn packet or a world save.
-     */
     @Override
     public void onEntityCreated(final AbstractContraptionEntity entity) {
         super.onEntityCreated(entity);
         startMoving(entity.level());
     }
 
-    /**
-     * There is deliberately no anchoring block inside this moving contraption.
-     * The stable Create controller is a separate invisible block in the parent
-     * world and is never part of the captured block map.
-     */
     @Override
     protected boolean isAnchoringBlockAt(final BlockPos pos) {
         return false;
@@ -146,10 +134,6 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         return payloadBlockCount;
     }
 
-    /**
-     * The assembler's mount orientation is persisted independently from Create's
-     * block restoration so Simulated can recover local zero if Create omits it.
-     */
     public BlockState getAssemblerBlockState() {
         final Direction facing = Direction.from3DDataValue(assemblerFacingId);
         final AttachFace[] faces = AttachFace.values();
@@ -157,6 +141,18 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         return SimulatedFabricContent.PHYSICS_ASSEMBLER.defaultBlockState()
                 .setValue(PhysicsAssemblerBlock.FACING, facing.getAxis().isHorizontal() ? facing : Direction.NORTH)
                 .setValue(PhysicsAssemblerBlock.FACE, face);
+    }
+
+    /** Fallback state used only if Create omits local zero during disassembly. */
+    public BlockState getAssemblerBlockState(final float snappedYawDegrees) {
+        final int quarterTurns = Math.floorMod(Math.round(snappedYawDegrees / 90.0F), 4);
+        final Rotation rotation = switch (quarterTurns) {
+            case 1 -> Rotation.COUNTERCLOCKWISE_90;
+            case 2 -> Rotation.CLOCKWISE_180;
+            case 3 -> Rotation.CLOCKWISE_90;
+            default -> Rotation.NONE;
+        };
+        return getAssemblerBlockState().rotate(rotation);
     }
 
     @Override
@@ -185,9 +181,10 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
                 : AttachFace.FLOOR.ordinal();
         super.readNBT(world, nbt, spawnData);
         if (payloadBlockCount <= 0 && !getBlocks().isEmpty()) {
-            // Old .6/.7 worlds did not store a separate payload count and did
-            // not carry the assembler inside the contraption.
             payloadBlockCount = getBlocks().size();
+        }
+        if (!seats.contains(HELM_SEAT)) {
+            seats.add(HELM_SEAT);
         }
     }
 }
