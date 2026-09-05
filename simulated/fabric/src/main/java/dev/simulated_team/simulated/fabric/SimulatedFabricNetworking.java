@@ -291,7 +291,7 @@ public final class SimulatedFabricNetworking {
 
         if (active.level() instanceof final ServerLevel serverLevel) {
             for (final UUID playerId : players) {
-                final ServerPlayer player = serverLevel.getPlayerByUUID(playerId);
+                final ServerPlayer player = (ServerPlayer) serverLevel.getPlayerByUUID(playerId);
                 if (player != null) {
                     stopFlightControl(player, message);
                 } else {
