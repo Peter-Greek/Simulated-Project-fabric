@@ -1,6 +1,7 @@
 {
   "itemGroup.simulated.group": "Create Simulated",
   "block.simulated.physics_assembler": "Physics Assembler",
+  "block.simulated.steering_wheel": "Steering Wheel",
   "item.simulated.gyroscopic_mechanism": "Gyroscopic Mechanism",
   "item.simulated.incomplete_gyroscopic_mechanism": "Incomplete Gyroscopic Mechanism",
   "item.simulated.engine_assembly": "Engine Assembly",
