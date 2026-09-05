@@ -83,7 +83,7 @@ public final class SimulatedFabric implements ModInitializer {
                             final boolean createLoaded = FabricLoader.getInstance().isModLoaded("create");
                             context.getSource().sendSuccess(() -> Component.literal(
                                     "Create: Simulated Fabric port loaded. Create=" + createLoaded
-                                            + "; Physics Assembler live Create transport enabled; Sable rigid-body physics pending."), false);
+                                            + "; Physics Assembler transport + Steering Wheel helm enabled; Sable rigid-body physics pending."), false);
                             return 1;
                         }))
                 .then(Commands.literal("compatibility")
@@ -125,6 +125,14 @@ public final class SimulatedFabric implements ModInitializer {
                             give(context.getSource(), new ItemStack(SimulatedFabricContent.PHYSICS_ASSEMBLER));
                             context.getSource().sendSuccess(() -> Component.literal(
                                     "Gave Physics Assembler"), false);
+                            return 1;
+                        }))
+                .then(Commands.literal("give_steering_wheel")
+                        .requires(source -> source.hasPermission(2))
+                        .executes(context -> {
+                            give(context.getSource(), new ItemStack(SimulatedFabricContent.STEERING_WHEEL));
+                            context.getSource().sendSuccess(() -> Component.literal(
+                                    "Gave Steering Wheel"), false);
                             return 1;
                         })));
     }
