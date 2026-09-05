@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "simulated",
+  "version": "${version}",
+  "name": "Create: Simulated (Fabric Port)",
+  "description": "Fabric 1.20.1 backport of Create: Simulated, targeted at the Homestead modpack stack.",
+  "authors": ["Creators of Aeronautics", "Fabric port contributors"],
+  "license": "See LICENSE.md",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "dev.simulated_team.simulated.fabric.SimulatedFabric",
+      "dev.simulated_team.simulated.fabric.SimulatedFabricFlightInitializer"
+    ],
+    "client": [
+      "dev.simulated_team.simulated.fabric.SimulatedFabricClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.4",
+    "fabric-api": ">=0.92.8+1.20.1",
+    "minecraft": "1.20.1",
+    "java": ">=17",
+    "create": ">=6.0.8.1"
+  }
+}

@@ -1,0 +1,75 @@
+plugins {
+    id 'fabric-loom'
+}
+
+base {
+    archivesName = 'simulated-fabric'
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.fabricmc.net/' }
+    maven { url = 'https://mvn.devos.one/snapshots' }
+    maven { url = 'https://mvn.devos.one/releases' }
+    maven { url = 'https://maven.createmod.net' }
+    maven { url = 'https://raw.githubusercontent.com/Fuzss/modresources/main/maven' }
+    maven { url = 'https://maven.jamieswhiteshirt.com/libs-release' }
+    maven { url = 'https://maven.blamejared.com' }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${minecraft_version}"
+    mappings loom.officialMojangMappings()
+
+    modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
+    modImplementation "com.simibubi.create:create-fabric:${create_fabric_version}"
+}
+
+loom {
+    runs {
+        client {
+            client()
+            name = 'Homestead Fabric Client'
+        }
+        server {
+            server()
+            name = 'Homestead Fabric Server'
+        }
+    }
+}
+
+processResources {
+    inputs.property 'version', project.version
+
+    filesMatching('fabric.mod.json') {
+        expand version: project.version
+    }
+
+    // Pull only upstream resources that have been explicitly backported or
+    // validated for the current 1.20.1 milestone. Do not package the complete
+    // 1.21.1 resource tree.
+    from('../common/src/main/resources') {
+        include 'assets/simulated/models/block/physics_assembler/**'
+        include 'assets/simulated/models/block/steering_wheel/*.json'
+        include 'assets/simulated/textures/block/physics_assembler.png'
+        include 'assets/simulated/textures/block/steering_wheel.png'
+        include 'assets/simulated/textures/item/gyroscopic_mechanism.png'
+        include 'assets/simulated/textures/item/incomplete_gyroscopic_mechanism.png'
+        include 'assets/simulated/textures/item/engine_assembly.png'
+        include 'assets/simulated/textures/item/incomplete_engine_assembly.png'
+    }
+    from('../common/src/generated/resources') {
+        include 'assets/simulated/blockstates/physics_assembler.json'
+        include 'assets/simulated/models/item/physics_assembler.json'
+    }
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(Integer.parseInt(java_version))
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = Integer.parseInt(java_version)
+}

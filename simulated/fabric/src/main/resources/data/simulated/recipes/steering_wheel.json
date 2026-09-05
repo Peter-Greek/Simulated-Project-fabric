@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "C",
+    "A",
+    "S"
+  ],
+  "key": {
+    "A": { "item": "create:andesite_casing" },
+    "C": { "item": "create:large_cogwheel" },
+    "S": { "item": "create:shaft" }
+  },
+  "result": {
+    "item": "simulated:steering_wheel",
+    "count": 1
+  }
+}

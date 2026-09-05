@@ -1,0 +1,74 @@
+name: Sable 1.20.1 backport
+
+on:
+  push:
+    branches:
+      - fabric-homestead-1.20.1
+    paths:
+      - 'sable-backport/**'
+      - '.github/workflows/sable-1.20.1.yml'
+
+concurrency:
+  group: sable-homestead-1.20.1
+  cancel-in-progress: true
+
+jobs:
+  companion:
+    name: Backport Sable Companion
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Clone pinned Sable Companion source
+        run: |
+          git clone https://github.com/ryanhcode/sable-companion.git .sable-companion
+          git -C .sable-companion checkout 652ecf0e051846f3a433dd20126dd4d64ec3793a
+
+      - name: Apply 1.20.1 build transform
+        run: python3 sable-backport/prepare_companion.py .sable-companion
+
+      - name: Build Sable Companion Fabric 1.20.1
+        working-directory: .sable-companion
+        run: ./gradlew :sable-companion-fabric:build --stacktrace --no-daemon
+
+      - name: Upload Sable Companion test jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: sable-companion-fabric-1.20.1-test
+          path: .sable-companion/fabric/build/libs/*.jar
+          if-no-files-found: error
+
+  sable-core:
+    name: Compile Sable 2.0.4 core
+    needs: companion
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download backported Sable Companion
+        uses: actions/download-artifact@v4
+        with:
+          name: sable-companion-fabric-1.20.1-test
+          path: .companion-libs
+
+      - name: Clone pinned Sable 2.0.4 source
+        run: |
+          git clone https://github.com/ryanhcode/sable.git .sable
+          git -C .sable checkout 22b8ce976dc2877eae3a1a4d2646a57d1ea559ff
+
+      - name: Apply Fabric 1.20.1 core transform
+        run: python3 sable-backport/prepare_sable.py .sable .companion-libs
+
+      - name: Compile Sable Fabric core against 1.20.1
+        working-directory: .sable
+        run: ./gradlew :fabric:compileJava --stacktrace --no-daemon
