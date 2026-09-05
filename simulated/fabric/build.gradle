@@ -51,7 +51,9 @@ processResources {
     // 1.21.1 resource tree.
     from('../common/src/main/resources') {
         include 'assets/simulated/models/block/physics_assembler/**'
+        include 'assets/simulated/models/block/steering_wheel/*.json'
         include 'assets/simulated/textures/block/physics_assembler.png'
+        include 'assets/simulated/textures/block/steering_wheel.png'
         include 'assets/simulated/textures/item/gyroscopic_mechanism.png'
         include 'assets/simulated/textures/item/incomplete_gyroscopic_mechanism.png'
         include 'assets/simulated/textures/item/engine_assembly.png'
