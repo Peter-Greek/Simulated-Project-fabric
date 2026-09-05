@@ -69,9 +69,10 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
 
         // Keep the logical seat away from local zero so clicking the moving
         // assembler still reaches its MovingInteractionBehaviour instead of
-        // Create's generic seat interaction path.
-        seats.clear();
-        seats.add(HELM_SEAT);
+        // Create's generic seat interaction path. Preserve real Create seats.
+        if (!seats.contains(HELM_SEAT)) {
+            seats.add(HELM_SEAT);
+        }
 
         pendingGlues.clear();
         pendingGlues.addAll(scan.glues());
