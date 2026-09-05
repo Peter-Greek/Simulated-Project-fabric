@@ -2,17 +2,16 @@ package dev.simulated_team.simulated.content.blocks.physics_assembler;
 
 import com.simibubi.create.api.behaviour.interaction.MovingInteractionBehaviour;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
+import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
+import dev.simulated_team.simulated.fabric.SimulatedFabricNetworking;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
-/**
- * Lets the visible Physics Assembler remain the interaction point while it is
- * being rendered as part of a Create contraption. The real controller is the
- * invisible anchor left at the assembly's original world position.
- */
+/** The moving Physics Assembler is the temporary helm for the Fabric vehicle prototype. */
 public final class PhysicsAssemblerMovingInteraction extends MovingInteractionBehaviour {
     @Override
     public boolean handlePlayerInteraction(final Player player,
@@ -23,13 +22,11 @@ public final class PhysicsAssemblerMovingInteraction extends MovingInteractionBe
             return false;
         }
 
-        if (!(contraptionEntity.getContraption() instanceof final PhysicsAssemblyContraption physicsAssembly)) {
+        if (!(contraptionEntity instanceof final ControlledContraptionEntity controlled)
+                || !(controlled.getContraption() instanceof final PhysicsAssemblyContraption physicsAssembly)) {
             return false;
         }
 
-        // Interaction packets are authoritative server-side. Returning true on
-        // the client prevents the click from falling through to blocks behind
-        // the moving assembler while the server performs the operation.
         if (player.level().isClientSide) {
             return true;
         }
@@ -53,10 +50,20 @@ public final class PhysicsAssemblerMovingInteraction extends MovingInteractionBe
             return true;
         }
 
-        final PhysicsAssemblerBlockEntity.OperationResult result = player.isShiftKeyDown()
-                ? assembler.nudgeAssembly(PhysicsAssemblerBlock.nudgeDirection(player))
-                : assembler.disassembleActive();
-        PhysicsAssemblerBlock.displayOperationResult(player, result);
+        if (player.isShiftKeyDown()) {
+            if (!SimulatedFabricNetworking.prepareForDisassembly(controlled)) {
+                PhysicsAssemblerBlock.displayOperationResult(player,
+                        PhysicsAssemblerBlockEntity.OperationResult.failure(
+                                "cannot park for disassembly: snapped heading collides with the world"));
+                return true;
+            }
+            PhysicsAssemblerBlock.displayOperationResult(player, assembler.disassembleActive());
+            return true;
+        }
+
+        if (player instanceof final ServerPlayer serverPlayer) {
+            SimulatedFabricNetworking.beginFlightControl(serverPlayer, controlled);
+        }
         return true;
     }
 }
