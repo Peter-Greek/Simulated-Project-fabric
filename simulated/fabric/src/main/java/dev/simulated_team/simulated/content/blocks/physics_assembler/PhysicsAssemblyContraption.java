@@ -27,7 +27,7 @@ import java.util.List;
  * captures the exact block set discovered by the Simulated-parity scanner.
  */
 public final class PhysicsAssemblyContraption extends TranslatingContraption {
-    /** Logical rider point used by the moving Physics Assembler as a temporary helm. */
+    /** Logical rider point used by the moving Physics Assembler as a fallback helm. */
     public static final BlockPos HELM_SEAT = BlockPos.ZERO.above();
 
     private BlockPos controllerPos;
@@ -67,12 +67,9 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
             }
         }
 
-        // Keep the logical seat away from local zero so clicking the moving
-        // assembler still reaches its MovingInteractionBehaviour instead of
-        // Create's generic seat interaction path. Preserve real Create seats.
-        if (!seats.contains(HELM_SEAT)) {
-            seats.add(HELM_SEAT);
-        }
+        // Keep a fallback logical seat away from local zero so clicking the
+        // moving assembler still reaches its MovingInteractionBehaviour.
+        ensureHelmSeat(HELM_SEAT);
 
         pendingGlues.clear();
         pendingGlues.addAll(scan.glues());
@@ -85,9 +82,7 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
             return false;
         }
         payloadBlockCount = getBlocks().size();
-        if (!seats.contains(HELM_SEAT)) {
-            seats.add(HELM_SEAT);
-        }
+        ensureHelmSeat(HELM_SEAT);
         return !getBlocks().isEmpty();
     }
 
@@ -133,6 +128,21 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
 
     public int getPayloadBlockCount() {
         return payloadBlockCount;
+    }
+
+    /**
+     * Ensures a logical rider point exists and returns its Create seat index.
+     * This lets moving control blocks choose their own rider position without
+     * replacing any real Create seats already captured by the contraption.
+     */
+    public int ensureHelmSeat(final BlockPos localSeat) {
+        final BlockPos seat = localSeat.immutable();
+        int index = seats.indexOf(seat);
+        if (index < 0) {
+            seats.add(seat);
+            index = seats.size() - 1;
+        }
+        return index;
     }
 
     public BlockState getAssemblerBlockState() {
@@ -184,8 +194,6 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         if (payloadBlockCount <= 0 && !getBlocks().isEmpty()) {
             payloadBlockCount = getBlocks().size();
         }
-        if (!seats.contains(HELM_SEAT)) {
-            seats.add(HELM_SEAT);
-        }
+        ensureHelmSeat(HELM_SEAT);
     }
 }
