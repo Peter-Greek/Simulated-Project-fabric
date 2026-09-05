@@ -63,7 +63,14 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         addBlock(world, controllerPos, capture(world, controllerPos));
         for (final BlockPos pos : scan.blocks()) {
             if (!pos.equals(controllerPos)) {
+                final BlockState state = world.getBlockState(pos);
                 addBlock(world, pos, capture(world, pos));
+
+                // Register logical steering-wheel rider points before the Create
+                // entity is spawned so clients receive the same seat table.
+                if (state.is(SimulatedFabricContent.STEERING_WHEEL)) {
+                    ensureHelmSeat(pos.subtract(controllerPos).above());
+                }
             }
         }
 
