@@ -6,6 +6,7 @@ import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAsse
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -74,9 +75,16 @@ public final class SimulatedFabricNetworking {
         FLIGHT_SESSIONS.clear();
     }
 
-    /** Called by the moving Physics Assembler interaction; there is no nearest-craft hotkey. */
+    /** Fallback helm entry point used by the moving Physics Assembler itself. */
     public static void beginFlightControl(final ServerPlayer player,
                                           final ControlledContraptionEntity target) {
+        beginFlightControl(player, target, PhysicsAssemblyContraption.HELM_SEAT);
+    }
+
+    /** Starts vehicle control from a specific logical rider point on the moving craft. */
+    public static void beginFlightControl(final ServerPlayer player,
+                                          final ControlledContraptionEntity target,
+                                          final BlockPos localSeat) {
         if (!target.isAlive() || !(target.getContraption() instanceof final PhysicsAssemblyContraption physicsAssembly)) {
             sendFlightControlState(player, false, "Physics Assembler helm is unavailable");
             return;
@@ -101,13 +109,7 @@ public final class SimulatedFabricNetworking {
         target.setControllingPlayer(playerId);
         target.setContraptionMotion(Vec3.ZERO);
 
-        final int helmSeat = target.getContraption().getSeats().indexOf(PhysicsAssemblyContraption.HELM_SEAT);
-        if (helmSeat < 0) {
-            sendFlightControlState(player, false, "Physics Assembler helm rider point is missing");
-            target.setControllingPlayer(null);
-            return;
-        }
-
+        final int helmSeat = physicsAssembly.ensureHelmSeat(localSeat);
         if (player.getVehicle() != target) {
             player.stopRiding();
             target.addSittingPassenger(player, helmSeat);
@@ -116,7 +118,7 @@ public final class SimulatedFabricNetworking {
         FLIGHT_SESSIONS.put(playerId, new FlightSession(target.getUUID()));
         syncContraptionPosition(target);
         sendFlightControlState(player, true,
-                "Physics Assembler helm engaged: W/S thrust, A/D yaw, Space ascend, Ctrl descend, Shift dismount");
+                "Vehicle helm engaged: W/S thrust, A/D yaw, Space ascend, Ctrl descend, Shift dismount");
     }
 
     /**
