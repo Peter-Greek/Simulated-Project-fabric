@@ -1,6 +1,7 @@
 package dev.simulated_team.simulated.fabric;
 
 import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
+import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblyContraption;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -12,7 +13,10 @@ import net.minecraft.network.chat.Component;
 
 /** Client-only hooks for the Homestead Fabric port. */
 public final class SimulatedFabricClient implements ClientModInitializer {
+    private static final int NO_INPUT_SENT = -1;
+
     private static boolean flightControlActive;
+    private static int lastSentInputMask = NO_INPUT_SENT;
 
     @Override
     public void onInitializeClient() {
@@ -29,7 +33,12 @@ public final class SimulatedFabricClient implements ClientModInitializer {
                         if (client.level == null) {
                             return;
                         }
-                        if (client.level.getEntity(entityId) instanceof final ControlledContraptionEntity entity) {
+                        // Check the contraption type, not just the entity class:
+                        // a stale or reused entity id would otherwise teleport an
+                        // unrelated Create contraption such as a bearing or a
+                        // windmill.
+                        if (client.level.getEntity(entityId) instanceof final ControlledContraptionEntity entity
+                                && entity.getContraption() instanceof PhysicsAssemblyContraption) {
                             entity.setRotationAxis(Direction.Axis.Y);
                             entity.setAngle(angle);
                             entity.setPos(x, y, z);
@@ -44,6 +53,9 @@ public final class SimulatedFabricClient implements ClientModInitializer {
                     final String message = buffer.readUtf(256);
                     client.execute(() -> {
                         flightControlActive = engaged;
+                        // Force the next tick to transmit, so the server always
+                        // learns the current input when a helm is engaged.
+                        lastSentInputMask = NO_INPUT_SENT;
                         if (client.player != null) {
                             client.player.displayClientMessage(Component.literal(message), true);
                         }
@@ -53,6 +65,7 @@ public final class SimulatedFabricClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.level == null) {
                 flightControlActive = false;
+                lastSentInputMask = NO_INPUT_SENT;
                 return;
             }
             if (!flightControlActive) {
@@ -81,11 +94,21 @@ public final class SimulatedFabricClient implements ClientModInitializer {
                 }
             }
 
+            // The server applies the stored input every tick, so intent only has
+            // to be transmitted when it actually changes.
+            if (inputMask == lastSentInputMask) {
+                return;
+            }
+            lastSentInputMask = inputMask;
+
             final FriendlyByteBuf input = PacketByteBufs.create();
             input.writeByte(inputMask);
             ClientPlayNetworking.send(SimulatedFabricNetworking.FLIGHT_INPUT, input);
         });
 
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> flightControlActive = false);
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            flightControlActive = false;
+            lastSentInputMask = NO_INPUT_SENT;
+        });
     }
 }

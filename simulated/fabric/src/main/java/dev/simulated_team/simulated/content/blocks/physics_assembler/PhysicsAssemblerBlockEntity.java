@@ -51,6 +51,8 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
     private int activeBlockCount;
     private int interactionCount;
     private String lastError = "";
+    /** Scan-rule counters from the most recent assembly attempt, for /simulated assembler_state. */
+    private String lastScanSummary = "";
 
     private long lastProcessedGameTime = Long.MIN_VALUE;
     private UUID lastProcessedPlayer;
@@ -88,6 +90,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
 
         final BlockPos seed = worldPosition.relative(PhysicsAssemblerBlock.getStickyFacing(getBlockState()));
         final FabricAssemblyScanner.ScanResult scan = FabricAssemblyScanner.scan(level, worldPosition, seed);
+        lastScanSummary = scan.stats().summary();
         if (!scan.successful()) {
             final BlockPos problem = scan.problemPos();
             final String suffix = problem == null ? "" : " at "
@@ -140,6 +143,10 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         }
 
         anchorController.activeBlockCount = payloadCount;
+        // The anchor is a fresh block entity, so carry the diagnostics across or
+        // /simulated assembler_state reports nothing for a live assembly.
+        anchorController.lastScanSummary = lastScanSummary;
+        anchorController.interactionCount = interactionCount;
         anchorController.attach(entity);
         return OperationResult.success(
                 "assembled exact Simulated scan; Physics Assembler is now part of the moving structure"
@@ -359,6 +366,10 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
 
     public String getLastError() {
         return lastError;
+    }
+
+    public String getLastScanSummary() {
+        return lastScanSummary;
     }
 
     private OperationResult fail(final String message) {

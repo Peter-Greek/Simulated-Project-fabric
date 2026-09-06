@@ -174,7 +174,10 @@ public final class SimulatedFabric implements ModInitializer {
                         + ", interactions=" + assembler.getInteractionCount()
                         + (assembler.getLastError().isEmpty()
                                 ? ""
-                                : ", error=" + assembler.getLastError())), false);
+                                : ", error=" + assembler.getLastError())
+                        + (assembler.getLastScanSummary().isEmpty()
+                                ? ""
+                                : ", lastScan={" + assembler.getLastScanSummary() + "}")), false);
         return 1;
     }
 

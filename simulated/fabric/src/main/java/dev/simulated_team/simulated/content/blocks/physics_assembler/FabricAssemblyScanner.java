@@ -26,6 +26,7 @@ import net.minecraft.world.level.block.state.properties.PistonType;
 import net.minecraft.world.level.material.PushReaction;
 
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Queue;
@@ -40,6 +41,13 @@ import java.util.Set;
  */
 public final class FabricAssemblyScanner {
     private static final int MAX_BLOCKS = 128_000;
+
+    /**
+     * Upstream searches a per-pair box inflated by 16. A pair reaches one block
+     * further than its anchor in each axis, so 17 around a single position
+     * covers every box upstream would have searched.
+     */
+    private static final double GLUE_SEARCH_RADIUS = 17.0D;
 
     /**
      * Matches the neighborhood used by upstream SimAssemblyContraption. The
@@ -87,7 +95,12 @@ public final class FabricAssemblyScanner {
         final Queue<BlockPos> frontier = new ArrayDeque<>();
         final Set<BlockPos> queued = new HashSet<>();
         final LinkedHashSet<BlockPos> blocks = new LinkedHashSet<>();
+        // Glue entities near any visited position. Used only for lookups, so it
+        // may contain sheets that never end up connecting two moved blocks.
         final Set<SuperGlueEntity> glueCache = new HashSet<>();
+        // Glue that actually joined two blocks in this assembly. This is what
+        // travels with the structure.
+        final LinkedHashSet<SuperGlueEntity> connectingGlues = new LinkedHashSet<>();
         final MutableStats stats = new MutableStats();
 
         frontier.add(startPos);
@@ -281,6 +294,12 @@ public final class FabricAssemblyScanner {
                 stats.cartAssemblerLinks++;
             }
 
+            // One glue query per visited position instead of one per candidate
+            // neighbour pair. Every sheet a pair anchored at this position could
+            // match is contained in this query, so the neighbour loop below can
+            // read the cache alone and still produce identical results.
+            primeGlueCache(level, pos, glueCache);
+
             for (final BlockPos offset : DIRECTION_OFFSETS) {
                 final BlockPos neighborPos = pos.offset(offset);
                 if (neighborPos.equals(assemblerPos) || queued.contains(neighborPos)) {
@@ -306,7 +325,8 @@ public final class FabricAssemblyScanner {
                         : null;
 
                 final ConnectionType connection = connectionType(
-                        level, pos, state, neighborPos, neighborState, cardinalDirection, glueCache);
+                        level, pos, state, neighborPos, neighborState, cardinalDirection,
+                        glueCache, connectingGlues);
                 if (connection != ConnectionType.NONE && enqueue(neighborPos, assemblerPos, frontier, queued)) {
                     if (connection == ConnectionType.GLUE) {
                         stats.glueLinks++;
@@ -322,7 +342,25 @@ public final class FabricAssemblyScanner {
             }
         }
 
-        return ScanResult.success(blocks, glueCache, min, max, stats.freeze());
+        return ScanResult.success(blocks, connectingGlues, min, max, stats.freeze());
+    }
+
+    /**
+     * Collects every Super Glue sheet that contains {@code pos}. A pair
+     * {@code (pos, neighbour)} spans at most one block in each axis, so the
+     * per-pair search box upstream uses is always inside this one; caching on
+     * containment of {@code pos} therefore loses no candidate.
+     */
+    private static void primeGlueCache(final Level level,
+                                       final BlockPos pos,
+                                       final Set<SuperGlueEntity> glueCache) {
+        for (final SuperGlueEntity glue : level.getEntitiesOfClass(
+                SuperGlueEntity.class,
+                SuperGlueEntity.span(pos, pos).inflate(GLUE_SEARCH_RADIUS))) {
+            if (glue.contains(pos)) {
+                glueCache.add(glue);
+            }
+        }
     }
 
     private static boolean enqueue(final BlockPos pos,
@@ -342,11 +380,12 @@ public final class FabricAssemblyScanner {
                                                  final BlockPos neighborPos,
                                                  final BlockState neighborState,
                                                  final Direction cardinalDirection,
-                                                 final Set<SuperGlueEntity> glueCache) {
+                                                 final Set<SuperGlueEntity> glueCache,
+                                                 final Set<SuperGlueEntity> connectingGlues) {
         // Explicit glue is allowed to carry brittle blocks in upstream Simulated.
         // This is why a glued carpet counts even though a carpet cannot seed an
         // assembly by itself.
-        if (isGluedBetween(level, pos, neighborPos, glueCache)) {
+        if (isGluedBetween(pos, neighborPos, glueCache, connectingGlues)) {
             return ConnectionType.GLUE;
         }
 
@@ -387,25 +426,16 @@ public final class FabricAssemblyScanner {
                 : ConnectionType.NONE;
     }
 
-    private static boolean isGluedBetween(final Level level,
-                                          final BlockPos first,
+    private static boolean isGluedBetween(final BlockPos first,
                                           final BlockPos second,
-                                          final Set<SuperGlueEntity> glueCache) {
+                                          final Set<SuperGlueEntity> glueCache,
+                                          final Set<SuperGlueEntity> connectingGlues) {
+        // primeGlueCache has already loaded every sheet containing `first`.
         for (final SuperGlueEntity glue : glueCache) {
             if (glue.contains(first) && glue.contains(second)) {
+                connectingGlues.add(glue);
                 return true;
             }
-        }
-
-        for (final SuperGlueEntity glue : level.getEntitiesOfClass(
-                SuperGlueEntity.class,
-                SuperGlueEntity.span(first, second).inflate(16))) {
-            if (!glue.contains(first) || !glue.contains(second)) {
-                continue;
-            }
-
-            glueCache.add(glue);
-            return true;
         }
 
         return false;
@@ -490,12 +520,26 @@ public final class FabricAssemblyScanner {
                              ScanStats stats,
                              String error,
                              BlockPos problemPos) {
-        private static ScanResult success(final Set<BlockPos> blocks,
-                                          final Set<SuperGlueEntity> glues,
+        /**
+         * Discovery order is preserved. Assembly capture, block removal and
+         * disassembly all walk this set, so an unordered copy would make an
+         * identical structure assemble differently between runs and make port
+         * bugs much harder to reproduce.
+         */
+        private static ScanResult success(final LinkedHashSet<BlockPos> blocks,
+                                          final LinkedHashSet<SuperGlueEntity> glues,
                                           final BlockPos min,
                                           final BlockPos max,
                                           final ScanStats stats) {
-            return new ScanResult(true, Set.copyOf(blocks), Set.copyOf(glues), min, max, stats, null, null);
+            return new ScanResult(
+                    true,
+                    Collections.unmodifiableSet(new LinkedHashSet<>(blocks)),
+                    Collections.unmodifiableSet(new LinkedHashSet<>(glues)),
+                    min,
+                    max,
+                    stats,
+                    null,
+                    null);
         }
 
         private static ScanResult failure(final String error, final BlockPos problemPos) {

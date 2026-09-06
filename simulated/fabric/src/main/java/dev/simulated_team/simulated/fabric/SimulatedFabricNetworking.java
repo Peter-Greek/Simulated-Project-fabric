@@ -11,6 +11,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -63,16 +64,64 @@ public final class SimulatedFabricNetworking {
         }
         receiversRegistered = true;
 
+        // The packet only records intent. Movement is applied on the server tick
+        // below, so a craft keeps accelerating and braking at a fixed rate no
+        // matter how often the client's input actually changes.
         ServerPlayNetworking.registerGlobalReceiver(
                 FLIGHT_INPUT,
                 (server, player, handler, buffer, responseSender) -> {
                     final int inputMask = buffer.readUnsignedByte() & VALID_FLIGHT_MASK;
-                    server.execute(() -> applyFlightInput(player, inputMask));
+                    server.execute(() -> {
+                        final FlightSession session = FLIGHT_SESSIONS.get(player.getUUID());
+                        if (session != null) {
+                            session.inputMask = inputMask;
+                        }
+                    });
                 });
     }
 
     public static void clearFlightControls() {
         FLIGHT_SESSIONS.clear();
+    }
+
+    /** Advances every live helm exactly once per server tick. */
+    public static void tickFlightSessions(final MinecraftServer server) {
+        if (FLIGHT_SESSIONS.isEmpty()) {
+            return;
+        }
+
+        for (final UUID playerId : List.copyOf(FLIGHT_SESSIONS.keySet())) {
+            final ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+            if (player == null) {
+                FLIGHT_SESSIONS.remove(playerId);
+                continue;
+            }
+
+            final FlightSession session = FLIGHT_SESSIONS.get(playerId);
+            if (session != null) {
+                tickFlightSession(player, session);
+            }
+        }
+    }
+
+    /**
+     * Releases a helm when its pilot disconnects. Without this the session
+     * outlives the player and the craft stays flagged as piloted.
+     */
+    public static void handlePlayerDisconnect(final ServerPlayer player) {
+        final FlightSession session = FLIGHT_SESSIONS.remove(player.getUUID());
+        if (session == null) {
+            return;
+        }
+
+        final Entity resolved = player.serverLevel().getEntity(session.contraptionId);
+        if (resolved instanceof final ControlledContraptionEntity controlled && controlled.isAlive()) {
+            controlled.setContraptionMotion(Vec3.ZERO);
+            if (controlled.getControllingPlayer().map(player.getUUID()::equals).orElse(false)) {
+                controlled.setControllingPlayer(null);
+            }
+            syncContraptionPosition(controlled);
+        }
     }
 
     /** Fallback helm entry point used by the moving Physics Assembler itself. */
@@ -159,12 +208,7 @@ public final class SimulatedFabricNetworking {
         }
     }
 
-    private static void applyFlightInput(final ServerPlayer player, final int inputMask) {
-        final FlightSession session = FLIGHT_SESSIONS.get(player.getUUID());
-        if (session == null) {
-            return;
-        }
-
+    private static void tickFlightSession(final ServerPlayer player, final FlightSession session) {
         final Entity resolved = player.serverLevel().getEntity(session.contraptionId);
         if (!(resolved instanceof final ControlledContraptionEntity active)
                 || !active.isAlive()
@@ -179,11 +223,9 @@ public final class SimulatedFabricNetworking {
             return;
         }
 
-        final long gameTime = player.serverLevel().getGameTime();
-        if (session.lastInputGameTime == gameTime) {
-            return;
-        }
-        session.lastInputGameTime = gameTime;
+        final int inputMask = session.inputMask;
+        final Vec3 positionBefore = active.position();
+        final float angleBefore = active.getAngle(1.0F);
 
         final int turn = ((inputMask & FLIGHT_LEFT) != 0 ? -1 : 0)
                 + ((inputMask & FLIGHT_RIGHT) != 0 ? 1 : 0);
@@ -216,7 +258,13 @@ public final class SimulatedFabricNetworking {
         }
 
         active.setContraptionMotion(Vec3.ZERO);
-        syncContraptionPosition(active);
+
+        // Only tell trackers about the craft when it actually moved. A parked
+        // helm otherwise broadcasts an identical position to every nearby player
+        // twenty times a second.
+        if (!active.position().equals(positionBefore) || active.getAngle(1.0F) != angleBefore) {
+            syncContraptionPosition(active);
+        }
     }
 
     private static Vec3 desiredDirection(final int inputMask, final float craftYawDegrees) {
@@ -338,7 +386,8 @@ public final class SimulatedFabricNetworking {
         private final UUID contraptionId;
         private Vec3 velocity = Vec3.ZERO;
         private double yawVelocity;
-        private long lastInputGameTime = Long.MIN_VALUE;
+        /** Latest intent from the pilot's client; applied on every server tick. */
+        private int inputMask;
         private boolean collisionNotified;
 
         private FlightSession(final UUID contraptionId) {
