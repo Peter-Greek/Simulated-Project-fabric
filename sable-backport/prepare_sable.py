@@ -1,21 +1,61 @@
 #!/usr/bin/env python3
-"""Prepare pinned Sable 2.0.4 for a Fabric 1.20.1 / Java 17 core compile probe.
+"""Prepare pinned Sable 2.0.4 for a Fabric 1.20.1 / Java 17 compile probe.
 
-The backport deliberately starts with the server/headless sublevel and physics
-core. 1.21-only client rendering, optional integrations and mixins are excluded
-from this probe so CI reports the API delta that actually blocks Simulated's
-assembly handoff instead of stopping on unrelated renderer compatibility code.
+usage: prepare_sable.py <sable checkout> [companion jar dir] [--full] [--shim]
+
+Three configurations, because one number on its own says very little:
+
+  (default)  The original core probe. Renderer, mixins, client and loader code
+             are excluded and Veil is absent, so the count covers the headless
+             sublevel and physics core only. It understates the real work.
+  --full     Nothing excluded and Veil on the classpath, so the count is the
+             whole port surface and every foundry.veil error is a genuine API
+             gap rather than a missing dependency.
+  --shim     Also install the backported packet layer from shim/, which supplies
+             the 1.20.5+ codec/payload types and Veil's packet manager. Measures
+             how much of the remaining delta is one shimmable abstraction.
+
+Section 2.1 of FABRIC_PORT_PLAN.md is what these feed.
 """
 
 from __future__ import annotations
 
 import pathlib
 import re
+import shutil
 import sys
 
 
-ROOT = pathlib.Path(sys.argv[1]).resolve()
-LIBS = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else ROOT / ".backport-libs"
+_args = sys.argv[1:]
+FULL = "--full" in _args
+SHIM = "--shim" in _args
+_positional = [a for a in _args if not a.startswith("--")]
+
+ROOT = pathlib.Path(_positional[0]).resolve()
+LIBS = pathlib.Path(_positional[1]).resolve() if len(_positional) > 1 else ROOT / ".backport-libs"
+SHIM_SOURCE = pathlib.Path(__file__).resolve().parent / "shim"
+
+# The shim replaces types that do not exist on 1.20.1 with equivalents that do.
+# Rewriting the import leaves every call site untouched; the two field constants
+# are rewritten in full because a shim cannot add static fields to vanilla types.
+SHIM_REWRITES = {
+    "import net.minecraft.network.codec.StreamCodec;":
+        "import dev.ryanhcode.sable.backport.net.StreamCodec;",
+    "import net.minecraft.network.codec.ByteBufCodecs;":
+        "import dev.ryanhcode.sable.backport.net.ByteBufCodecs;",
+    "import net.minecraft.network.RegistryFriendlyByteBuf;":
+        "import dev.ryanhcode.sable.backport.net.RegistryFriendlyByteBuf;",
+    "import net.minecraft.network.protocol.common.custom.CustomPacketPayload;":
+        "import dev.ryanhcode.sable.backport.net.CustomPacketPayload;",
+    "import foundry.veil.api.network.handler.PacketContext;":
+        "import dev.ryanhcode.sable.backport.net.PacketContext;",
+    "import foundry.veil.api.network.VeilPacketManager;":
+        "import dev.ryanhcode.sable.backport.net.VeilPacketManager;",
+    "UUIDUtil.STREAM_CODEC":
+        "dev.ryanhcode.sable.backport.net.ByteBufCodecs.UUID_CODEC",
+    "ResourceLocation.STREAM_CODEC":
+        "dev.ryanhcode.sable.backport.net.ByteBufCodecs.RESOURCE_LOCATION",
+}
 
 
 def write(rel: str, text: str) -> None:
@@ -171,9 +211,48 @@ if not companion_jars:
     raise RuntimeError(f"No non-sources Sable Companion jar found under {LIBS}")
 companion = companion_jars[0].as_posix()
 
-# This is a headless compile probe, not the final runtime jar. Renderer/client
-# code and optional compatibility are intentionally deferred until the server
-# sublevel/physics core compiles on 1.20.1.
+# Veil's 1.20.1 line is versioned 1.0.0.x, unrelated to the 4.3.2 Sable pins for
+# 1.21.1. 1.0.0.296 is the newest and is what the --full measurement runs against,
+# so a foundry.veil error means a real API gap and not an absent dependency.
+VEIL_DEPENDENCY = (
+    '    modImplementation "foundry.veil:Veil-fabric-1.20.1:1.0.0.296"\n'
+    if FULL or SHIM
+    else ""
+)
+VEIL_REPOSITORY = (
+    "    maven { url = 'https://maven.blamejared.com' }\n" if FULL or SHIM else ""
+)
+
+# The default probe is headless: renderer, client hooks, mixins and third-party
+# integrations are deferred so the count covers the sublevel/physics core alone.
+# --full drops the exclusions so the reported count is the real port surface.
+EXCLUSIONS = (
+    ""
+    if FULL or SHIM
+    else """
+    // Defer 1.21 renderer, client hooks, mixins and third-party integrations.
+    // Keeping them out of this probe exposes the core sublevel/physics delta.
+    exclude 'dev/ryanhcode/sable/mixin/**'
+    exclude 'dev/ryanhcode/sable/sublevel/render/**'
+    exclude 'dev/ryanhcode/sable/debug/**'
+    exclude 'dev/ryanhcode/sable/compatibility/**'
+    exclude 'dev/ryanhcode/sable/SableClient.java'
+    exclude 'dev/ryanhcode/sable/SableClientConfig.java'
+    exclude 'dev/ryanhcode/sable/fabric/**'
+"""
+)
+
+# --full and --shim are measurements, not gates: report the whole error list
+# rather than javac's first hundred, and let the build finish so the count can be
+# read off. The default probe keeps failing on error, because that one is the gate.
+MEASURE = (
+    """    options.failOnError = false
+    options.compilerArgs += ['-Xmaxerrs', '100000', '-nowarn']
+"""
+    if FULL or SHIM
+    else ""
+)
+
 write(
     "fabric/build.gradle",
     f"""plugins {{
@@ -187,7 +266,7 @@ repositories {{
     maven {{ url = 'https://maven.ryanhcode.dev/releases' }}
     maven {{ url = 'https://raw.githubusercontent.com/Fuzss/modresources/main/maven/' }}
     maven {{ url = 'https://api.modrinth.com/maven' }}
-}}
+{VEIL_REPOSITORY}}}
 
 dependencies {{
     minecraft "com.mojang:minecraft:${{minecraft_version}}"
@@ -195,7 +274,7 @@ dependencies {{
     modImplementation "net.fabricmc:fabric-loader:${{fabric_loader_version}}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${{fabric_version}}"
     modImplementation "fuzs.forgeconfigapiport:forgeconfigapiport-fabric:8.0.3"
-    implementation "org.apache.maven:maven-artifact:3.8.5"
+{VEIL_DEPENDENCY}    implementation "org.apache.maven:maven-artifact:3.8.5"
     modImplementation files('{companion}')
 }}
 
@@ -212,17 +291,7 @@ java {{
 
 tasks.withType(JavaCompile).configureEach {{
     options.release = 17
-
-    // Defer 1.21 renderer, client hooks, mixins and third-party integrations.
-    // Keeping them out of this probe exposes the core sublevel/physics delta.
-    exclude 'dev/ryanhcode/sable/mixin/**'
-    exclude 'dev/ryanhcode/sable/sublevel/render/**'
-    exclude 'dev/ryanhcode/sable/debug/**'
-    exclude 'dev/ryanhcode/sable/compatibility/**'
-    exclude 'dev/ryanhcode/sable/SableClient.java'
-    exclude 'dev/ryanhcode/sable/SableClientConfig.java'
-    exclude 'dev/ryanhcode/sable/fabric/**'
-}}
+{MEASURE}{EXCLUSIONS}}}
 """,
 )
 
@@ -239,7 +308,23 @@ for path in ROOT.rglob("*.java"):
         "net.minecraftforge.common.ForgeConfigSpec",
     )
     changed = changed.replace("ModConfigSpec", "ForgeConfigSpec")
+    if SHIM:
+        for old, new in SHIM_REWRITES.items():
+            changed = changed.replace(old, new)
     if changed != text:
         path.write_text(changed, encoding="utf-8")
 
-print(f"Prepared Sable {ROOT} for Fabric 1.20.1 headless core compile using {companion}")
+if SHIM:
+    # Copied in after the rewrite pass so the shim's own sources are left alone.
+    shim_target = ROOT / "common" / "src" / "main" / "java"
+    if not SHIM_SOURCE.is_dir():
+        raise RuntimeError(f"shim sources not found at {SHIM_SOURCE}")
+    for source in SHIM_SOURCE.rglob("*.java"):
+        destination = shim_target / source.relative_to(SHIM_SOURCE)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+
+mode = "full surface" if FULL or SHIM else "headless core"
+if SHIM:
+    mode += " with the backported packet layer"
+print(f"Prepared Sable {ROOT} for a Fabric 1.20.1 {mode} compile using {companion}")

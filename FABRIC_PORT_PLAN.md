@@ -142,29 +142,33 @@ Current state of the backport attempt:
 - `Backport Sable Companion` **passes**. Companion (math/native side) builds for
   Fabric 1.20.1 / Java 17.
 - `Compile Sable 2.0.4 core` **fails**, on two independent classes of error:
-  1. **Veil.** Sable 2.0.4 targets Veil `4.3.2`. The compile probe does not put
-     Veil on the classpath at all, so every `foundry.veil.*` reference fails.
-     More importantly: **`maven.blamejared.com` publishes no Veil 4.x for
-     1.20.1.** The newest `Veil-fabric-1.20.1` is `1.0.0.86` (Dec 2024), which
-     does not contain `foundry.veil.api.network`, `VeilPacketManager`,
-     `foundry.veil.platform.registry`, or `foundry.veil.api.client.editor`.
-     Sable's Veil coupling has to be satisfied some other way — backport Veil,
-     replace those usages, or shim them.
+  1. **Veil.** Sable 2.0.4 targets Veil `4.3.2`, and the gate probe puts no Veil
+     on the classpath at all, so every `foundry.veil.*` reference fails there.
+     Veil's 1.20.1 line is versioned `1.0.0.x`, unrelated to the 4.x line, and
+     the newest is `1.0.0.296` (27 Dec 2024). Measured against it, 15 of the 28
+     Veil types Sable imports are present and 13 are missing — see §2.1.
   2. **1.20.5+ vanilla APIs.** `net.minecraft.network.codec`,
      `net.minecraft.network.protocol.common.custom`, and friends do not exist on
      1.20.1. Sable's packet layer needs the same treatment as Simulated's.
-- The probe also excludes `sable/mixin/**`, `sublevel/render/**`, `debug/**`,
-  `compatibility/**`, `SableClient`, and `fabric/**` — so the **real** delta is
-  larger than what CI currently reports. The renderer and mixin surface are
-  unmeasured.
+- The gate probe also excludes `sable/mixin/**`, `sublevel/render/**`, `debug/**`,
+  `compatibility/**`, `SableClient`, and `fabric/**` — 256 of 534 common files —
+  and javac stops counting at a hundred, so its number is an understatement
+  twice over.
 
-**Before committing to a schedule for V2, produce an honest measurement:** put
-*some* Veil on the classpath, stop excluding the renderer and mixins, and let CI
-report the true error count. Whether the answer is "shim Veil", "backport Veil",
-or "cut Sable's Veil dependency" is an open call — all three are legitimate.
+The honest measurement §2.1 asked for has now been taken, and it **changes the
+shape of V2**: the blocker is one shimmable abstraction rather than a pervasive
+one. Numbers, decisions and method are in §2.1; the two corrections this section
+needed are:
 
-Everything in V1 below is deliberately chosen to be **independent of that
-answer**, so the port keeps moving while Sable is being sized up.
+- The earlier note here said the newest `Veil-fabric-1.20.1` was `1.0.0.86` and
+  contained no `foundry.veil.platform.registry` or `foundry.veil.api.client.editor`.
+  Both parts were wrong. The newest is `1.0.0.296`, and it has both of those.
+  What it genuinely lacks is any `foundry.veil.api.network` package at all.
+- "The renderer and mixin surface are unmeasured" no longer holds. Both are
+  measured in §2.1.
+
+Everything in V1 below is deliberately chosen to be **independent of the Veil
+answer**, so the port keeps moving while Sable is being brought up.
 
 ---
 
@@ -485,14 +489,149 @@ being a Create contraption and becomes a Sable sub-level.
 
 ### 2.1 Size the work honestly (do this first)
 
-- [ ] Sable CI compiles with the renderer, mixins, client, and loader code
+- [x] Sable CI compiles with the renderer, mixins, client, and loader code
       **included** — not excluded — so the error count is real.
-- [ ] Veil is on the classpath in some form, so `foundry.veil.*` errors reflect
+- [x] Veil is on the classpath in some form, so `foundry.veil.*` errors reflect
       an actual API gap rather than a missing dependency.
-- [ ] Written decision recorded on the Veil question (backport / replace / shim),
+- [x] Written decision recorded on the Veil question (backport / replace / shim),
       with the measured cost of each.
-- [ ] Written decision recorded on Sable's 1.20.5+ networking APIs.
-- [ ] The renderer and mixin surface is measured and reported, not deferred.
+- [x] Written decision recorded on Sable's 1.20.5+ networking APIs.
+- [x] The renderer and mixin surface is measured and reported, not deferred.
+
+**Notes log — the measurement, `2026-09-06`.**
+
+`sable-backport/prepare_sable.py` now takes flags, and `Sable 1.20.1 backport`
+runs three configurations instead of one. `Compile Sable 2.0.4 core` is unchanged
+and is still the gate. The two new `Measure Sable 2.0.4 surface` jobs report and
+do not gate, because the count is expected to be non-zero for as long as V2 is in
+progress; what matters is that it is honest and that it moves. Each writes a
+breakdown to the job summary through `sable-backport/summarise_errors.py`.
+
+| Configuration | Excluded | Veil | Errors |
+|---|---|---|---|
+| `Compile Sable 2.0.4 core` (the gate) | renderer, mixins, client, loader | absent | **349** |
+| gate exclusions, Veil added | renderer, mixins, client, loader | `1.0.0.296` | **302** |
+| `--full` | nothing | `1.0.0.296` | **495** |
+| `--full --shim` | nothing | `1.0.0.296` + backported packet layer | **267** |
+
+The gate prints `100 errors`, which is javac's default cap rather than a count —
+it was reproduced locally at that cap, and 349 is what the same configuration
+reports once `-Xmaxerrs` is raised. Even 349 is only the headless core: the
+exclusions hide 256 of the 534 files in `common`, 48% of them and 38% of the
+lines.
+
+**The single most useful thing this measurement found:** the errors are not
+spread evenly across the port. 208 of the core's 302 are in the three `network/`
+packages, and that is the shallowest problem of the lot. Sable's packets use a
+tiny, entirely mechanical slice of the modern API:
+
+| Type | Files | What Sable actually uses |
+|---|---|---|
+| `StreamCodec` | 27 | `of`, `composite` (arity 1–3), `ofMember`, `apply` |
+| `RegistryFriendlyByteBuf` | 23 | a type parameter; two of its three construction sites pass a null registry access |
+| `CustomPacketPayload` | 20 | the nested `Type` holder and `type()` |
+| `PacketContext` (Veil) | 24 | `level()` and `player()`, nothing else |
+| `ByteBufCodecs` | 6 | 6 primitives, `fromCodec`, `collection`, `optional` |
+| `VeilPacketManager` (Veil) | 6 | `create`, `registerClientbound`, `registerServerbound`, `PacketSink`, `player`, `server` |
+
+So it was written: `sable-backport/shim/`, six types, 605 lines, supplying
+those on 1.20.1 over Fabric's own play networking. `prepare_sable.py --shim`
+rewrites the six imports and the two vanilla `STREAM_CODEC` field constants —
+a shim cannot add static fields to `UUIDUtil` or `ResourceLocation` — and copies
+the shim in. Nothing else in Sable changes. **Errors fall from 495 to 267, and
+the shim itself compiles clean.** `network/packets`, `network/tcp`,
+`physics/config`, `physics/floating_block`, `sublevel/system` and `util` all go
+to zero in one move. `network/udp` drops from 18 to 5; what survives there is the
+UDP fast path reaching for `ProtocolSwapHandler`, `DisconnectionDetails` and
+`CommonListenerCookie`, which are connection-plumbing changes from 1.20.2/1.20.5
+rather than packet-shape ones, and are their own small job.
+
+**Decision — Veil: replace, do not backport.** Backporting Veil 4.3.2 to 1.20.1
+was never the right shape of job, and the measurement says it is not needed.
+Of the 28 Veil types Sable imports, 15 are already in `Veil-fabric-1.20.1`
+`1.0.0.296`, including `foundry.veil.platform.registry` and
+`foundry.veil.api.client.editor`, which this plan previously recorded as absent.
+The 13 that are missing split cleanly in two:
+
+- **Networking — 2 types, `VeilPacketManager` and `PacketContext`, used by 24
+  files.** Veil's 1.20.1 line has no `foundry.veil.api.network` package at all.
+  Measured cost to replace: done, part of the 605-line shim above.
+- **Renderer — 11 types**: `VertexArray`, `VertexArrayBuilder`, `ShaderBlock`,
+  `DynamicShaderBlock`, `ShaderUniform`, `VanillaShaderCompiler`,
+  `VeilRenderProfiler`, `RenderProfilerCounter`, `SingleWindowInspector`,
+  `IrisCompat`, `SodiumCompat`. These are the real Veil dependency, and they are
+  a renderer problem, not a physics one. See below.
+
+**Decision — Sable's 1.20.5+ networking APIs: shim them, do not rewrite Sable.**
+The alternative was editing 40-odd Sable files to use `FriendlyByteBuf` and
+Fabric channels directly. That is more code, has to be re-done on every Sable
+version bump, and would leave the port unable to track upstream. The shim keeps
+Sable's sources byte-identical apart from six import lines, and it encodes on the
+wire exactly as upstream does — `fromCodec` still goes through NBT — so a 1.20.1
+and a 1.21.1 client would agree on the bytes. One caveat recorded rather than
+hidden: the shim's transport is Fabric-specific and currently sits in Sable's
+`common` module, which the probe compiles into `:fabric` anyway. A production
+build wants it behind the loader split.
+
+**Renderer surface, measured.** 32 files and 4,582 lines of renderer
+(`sublevel/render` 21 files / 3,375 lines, `render/**` 11 files / 1,207 lines),
+plus 27 render-path mixins. After the shim it accounts for **124 of the 267
+remaining errors**, from three causes:
+
+- Veil 4's GLSL processing stack. `io.github.ocelot.glslprocessor` is 33 of the
+  errors on its own; it is a separate Ocelot library that Veil 4 pulls in and
+  that Veil `1.0.0.296` does not bundle. Three shader preprocessors depend on it.
+- The 11 missing Veil renderer types above.
+- Two vanilla renames: `SectionRenderDispatcher` (1.20.2 renamed
+  `ChunkRenderDispatcher`, 10 errors) and `DeltaTracker` (1.21, 10 files).
+
+This is the honest hard part of V2, and it is the part the old exclusions were
+hiding. It does not block physics — it blocks *seeing* physics.
+
+**Mixin surface, measured, with the caveat that matters.** 229 mixins, 13,092
+lines, across 49 feature groups; `entity` alone is 71. 208 of them declare a
+`@Mixin` target: **199 vanilla targets resolve to a class that still exists on
+1.20.1**, 7 do not (`EnchantingTableBlockEntity`, `Leashable`,
+`PathfindingContext`, `OptionsScreen`, `ProjectileDispenseBehavior`, and two on
+`SectionRenderDispatcher.RenderSection`), and 4 could not be resolved from
+imports.
+
+That number is encouraging and it is also nearly meaningless on its own, so:
+**compiling proves almost nothing about a mixin.** The target class existing says
+nothing about the injection point existing. Behind those 229 files are 166
+`@Inject`, 71 `@Redirect`, 54 `@WrapOperation`, 24 `@Overwrite`, 17
+`@ModifyReturnValue`, and 331 `method =` targets against 171 `@At` descriptors,
+every one of which is resolved at *apply* time against 1.20.1 bytecode. A green
+compile with a red game is the expected failure mode here. V2 must not treat
+mixin work as measurable by CI compile alone — it is measurable by the game
+starting.
+
+**Optional-mod compatibility is not a physics problem.** 73 of the 267 remaining
+errors are `mixin/compatibility` and its helpers, against Shoulder Surfing,
+Sodium 0.6 (`net.caffeinemc.mods.sodium`, a package that does not exist on 1.20.1
+— Sodium there is `me.jellysquid.mods.sodium`), Iris, Jade, Vista, Moonlight,
+Exposure and CC:Tweaked. None is required for physics, and Homestead ships few of
+them. Treat the whole directory as droppable and revisit per mod; Sodium and Iris
+specifically come back as V2 ship criteria because Homestead does ship those.
+
+**Where that leaves V2.** After the shim, of 267 errors: 124 renderer, 73
+optional-mod compat, and roughly 70 spread thin across small vanilla renames
+(`mixin/recoil` 5, `mixin/entity` 10, `mixin/options` 3, `mixin/enchanting_table`
+3, the `network/udp` fast path 5+4, the Forge/NeoForge config port 5, and the
+loader entrypoints in `fabric/**` 14). The physics core — sub-levels, rigid
+bodies, constraints, storage, block properties, dimension physics — is no longer
+the problem. **The renderer is V2's real cost, and the mixin apply pass is its
+real risk.**
+
+Reproduce any of it:
+
+```bash
+git clone https://github.com/ryanhcode/sable.git .sable
+git -C .sable checkout 22b8ce976dc2877eae3a1a4d2646a57d1ea559ff
+python3 sable-backport/prepare_sable.py .sable <companion-jar-dir> --full --shim
+(cd .sable && ./gradlew :fabric:compileJava --no-daemon --console=plain) 2>&1 | tee compile.log
+python3 sable-backport/summarise_errors.py compile.log
+```
 
 ### 2.2 Sable running
 
@@ -700,3 +839,30 @@ This is the record of *why* the plan changed, which matters more than the plan.
   plan. Two findings from the first review pass were checked against the Create
   6.0.8.1 sources and turned out to be wrong; both are recorded in 1.8 rather
   than deleted, so they do not get re-reported later.
+- `2026-09-06` — Homestead `.14`/`.15` landed: content registers through
+  Registrate and the resource tree is generated. Full write-up in V1 §1.1.
+- `2026-09-06` — **Took the V2 §2.1 measurement, and it changed the shape of V2.**
+  Numbers and decisions are in §2.1; what belongs here is why the old picture was
+  wrong. The Sable gate probe reports `100 errors`, which reads like an error
+  count and is javac's default cap. The same configuration reports 349 once
+  `-Xmaxerrs` is raised, and the gate also excludes 256 of 534 files, so the true
+  figure is 495. Two things follow. First, **never quote a javac count without raising
+  `-Xmaxerrs`** — the new measurement jobs set it to 100000. Second, the recorded
+  claim that no usable Veil exists for 1.20.1 was wrong in both particulars: the
+  newest is `1.0.0.296`, not `1.0.0.86`, and it does contain
+  `foundry.veil.platform.registry` and `foundry.veil.api.client.editor`, which
+  this plan had listed as missing. It was checked by downloading the jar and
+  diffing its class list against Sable's imports rather than by reading a version
+  listing. The one real Veil gap on the networking side is that its 1.20.1 line
+  has no `foundry.veil.api.network` package at all.
+- `2026-09-06` — Wrote `sable-backport/shim/` rather than only costing it, because
+  §2.1 asks for the *measured* cost of each option and an estimate would not have
+  been that. 605 lines took the whole surface from 495 errors to 267 and compiles
+  clean itself. The residual is 124 renderer, 73 optional-mod compat, ~70 spread
+  thin. Recorded as a deviation: the shim's transport is Fabric-specific and
+  currently lives in Sable's `common` module, which only works because the probe
+  compiles `common` into `:fabric`. A production build needs it behind the loader
+  split. Also recorded, because it is the thing most likely to be forgotten: 199
+  of Sable's mixins target classes that still exist on 1.20.1, and that fact is
+  nearly worthless — injection points resolve at apply time, not compile time, so
+  a green compile here predicts very little about the game starting.
