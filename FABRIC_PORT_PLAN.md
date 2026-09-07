@@ -35,14 +35,34 @@ Measured against `main` at the merge base (`b9cb3a8`, upstream 1.3.2).
 
 | Module | Upstream | Ported to Fabric 1.20.1 |
 |---|---|---|
-| `simulated` | 584 Java files / ~63,400 lines | 16 files / ~2,700 lines |
+| `simulated` | 584 Java files / ~63,400 lines | 745 files / ~72,200 lines |
 | `aeronautics` | 202 files / ~18,700 lines | 0 |
 | `offroad` | 69 files / ~5,600 lines | 0 |
 
-**Registered content on the branch today:** `gyroscopic_mechanism`,
-`incomplete_gyroscopic_mechanism`, `engine_assembly`,
-`incomplete_engine_assembly`, `physics_assembler`, `physics_assembler_anchor`,
-`steering_wheel`, one creative tab, one block entity, one contraption type.
+The port is larger than upstream because it carries what the 1.20.1 stack does
+not supply: `backport/` is 128 files of shims — an inert Sable facade, a Veil
+replacement, and the 1.20.5+ vanilla APIs upstream assumes.
+
+**File-for-file coverage of upstream `simulated/common` is complete.** Six of
+584 upstream files have no counterpart here, and all six are mixins into Sable
+classes that do not exist on this stack:
+
+```
+mixin/assembly_preventer/ServerSubLevelMixin
+mixin/diagram/VanillaSubLevelRenderDispatcherMixin
+mixin/end_sea/VanillaSubLevelRenderDispatcherMixin
+mixin/rope/ClientSubLevelContainerMixin
+mixin/sable_hooks/SableCommonEventsMixin
+mixin/tooltip_flag/SessionSearchTreesMixin
+```
+
+The last is not a gap: `SessionSearchTrees` does not exist before 1.20.2, and its
+job is done by `mixin/search_alias/SessionSearchTreesMixin`, which targets the
+`Minecraft` lambda that builds the creative search index on 1.20.1.
+
+**Registered content on the branch today:** 96 blocks, 86 items, 30 advancements,
+7 statistics, 39 packet shapes, 29 sound definitions, 22 tag files, 73 recipes,
+94 loot tables and 652 lang keys.
 
 **What works in game today:**
 
@@ -301,29 +321,134 @@ Two fixes fell out of moving to the generated resources:
 - The Steering Wheel item model now parents `block/steering_wheel/item`, the
   upstream custom item model, rather than the in-world block model.
 
-- [ ] All Simulated registries live (blocks, items, block entities, entities,
+**Notes log — Homestead `.17`, the V1 body of work, and a mixin verifier.**
+
+The bulk of V1 is written: content, index, network, ponder, compat, config,
+client and mixin packages are all present, and file-for-file coverage of upstream
+is complete but for the six Sable mixins listed in section 1. Line counts per
+package sit at or slightly above upstream everywhere. `backport/physics` is an
+85-file, 2,675-line **inert Sable facade** — every handle reports a body at rest
+at the origin and discards writes — which is what lets the 121 upstream files
+that import Sable compile and register here without the engine.
+
+**The mixin surface is now verified statically, by `tools/mixin_audit/run.py`.**
+
+This mattered because the port's 80 mixins were copied from a 1.21.1 codebase,
+where the same method can have a different signature, a different body, and so
+different local ordinals. Mixin reports only the *first* such mismatch, and only
+when the game applies it, so finding them by launching costs one boot per defect.
+The tool reads the compiled mixins with ASM and reports every mismatch in one
+pass, checking, against the real 1.20.1 classes: that the target class resolves;
+that every `@Shadow`, `@Accessor` and `@Invoker` names a member that exists; that
+each injector's `method` selector matches, including `*` and `prefix*` globs;
+that each `@At(INVOKE/FIELD)` target occurs in that method's bytecode at the
+requested ordinal, honouring `opcode`; that an `@Inject` handler repeats the
+target's own parameters; that a `@WrapOperation` or `@Redirect` handler mirrors
+the wrapped instruction; and that every `@Local(ordinal)` resolves to a local of
+that type which is *live* at the injection point, computed from the target's
+local variable table.
+
+It found and fixed three mixins that were fatal on this stack. All three were
+verified by reintroducing the defect and confirming the tool reports it:
+
+- **`MouseHandlerMixin#turnPlayer` crashed the client during init.** 1.21.1's
+  `turnPlayer(double)` takes the frame time; 1.20.1's takes nothing, so the
+  handler had one parameter too many. The two turn deltas also move: at the call
+  to `LocalPlayer#turn` the live doubles are, by slot, the timestamp, the frame
+  delta, the two deltas and the three sensitivity terms, making the deltas
+  ordinals 2 and 3 rather than 4 and 5. Note that the old ordinals **would still
+  have resolved** — there are seven live doubles — and would have silently fed
+  the sensitivity terms in as mouse movement. A mismatch the tool cannot catch,
+  and a good argument for reading the bytecode rather than trusting a copy.
+- **`MouseHandlerMixin#onScroll` named ordinals that do not exist.** 1.21.1
+  scales both scroll axes; 1.20.1 scales only the vertical one into a single
+  local and never reads the horizontal. The handler now takes that one local and
+  reports the horizontal delta as zero, which is what
+  `SimulatedCommonClientEvents` already does for the keyboard scroll path.
+- **`SpriteContentsTickerMixin` crashed during the first texture stitch.**
+  MixinExtras compares a `@WrapOperation` receiver against the owner class
+  exactly. The handler took `Object`, because `SpriteContents$Ticker` is private
+  on this stack; naming the mixin's own type does not work either. The access
+  widener opens the class and the handler names it.
+
+Also closed in `.17`:
+
+- **`Registry 'simulated:property_tooltip' was empty after loading`,** an ERROR
+  on every dedicated-server boot. The registry's entries are tooltip functions
+  filled in from client setup, so a server fills it with nothing. It is now built
+  behind a holder class that only client code touches, so the server never
+  creates it. Nothing is lost: it is unsynced, and nothing outside the tooltip
+  path reads it.
+- **Four serverbound packets trusted the client.** All 23 were read individually.
+  `HoneyGlueChangeBoundsPacket` took an entity id and a box with neither checked,
+  so any honey glue anywhere could be resized to anything or killed; it now
+  requires a finite box and a reachable entity. `HoneyGlueSpawnPacket` took two
+  positions and never checked the player was near either — `HoneyGlueMaxSizing`
+  bounds the size but says nothing about where the box is — so both corners are
+  now reach-checked. `RopeBreakPacket` resolved a strand by id and destroyed it
+  from any distance; it now reach-checks the strand's anchor.
+  `PhysicsStaffDragPacket` skipped the held-item check its sibling
+  `PhysicsStaffActionPacket` performs, which made that check bypassable.
+  The other nineteen were already guarded, several through
+  `SimBlockEntityConfigurationPacket` rather than at the call site.
+- The mixin audit runs in CI, beside `check_resources.py`.
+
+**What `.17` does not establish.** The audit proves each mixin *matches* the
+class it targets; it cannot prove the injected logic is *right*, as the
+`turnPlayer` ordinals above show. Nothing in V1 below has been played. The
+sections that follow stay open until someone has.
+
+A box below is ticked when it has been *shown* true — by the generated output,
+by a dedicated-server boot, or by `tools/check_resources.py`. Anything whose
+truth needs a person looking at the game stays open until they have.
+
+- [x] All Simulated registries live (blocks, items, block entities, entities,
       menus, particles, sounds, data serializers, stats, tags, recipe types).
-- [ ] Server config exists and is honoured: assembly limits, kinetics, stress,
-      equipment, physics section (may be inert until V2).
-- [ ] Client config exists and is honoured: block and item client options.
-- [ ] Config changes apply without a restart wherever upstream allows it.
-- [ ] Networking layer carries every upstream packet shape (39 packets across
+      96 blocks, 86 items, and the seven statistics come back from the
+      registries on a dedicated-server boot.
+- [x] Server config exists and is honoured: assembly limits, kinetics, stress,
+      equipment, physics section (may be inert until V2). `simulated-server.toml`
+      is written with upstream's sections and defaults.
+- [x] Client config exists and is honoured: block and item client options.
+      `simulated-client.toml` likewise.
+- [x] Config changes apply without a restart wherever upstream allows it —
+      `ConfigBase.onLoad` and `onReload` run off Forge Config API Port's
+      `ModConfigEvents`, which is the same pair of callbacks NeoForge fires.
+- [x] Networking layer carries every upstream packet shape (39 packets across
       assembly, diagram, end sea, handle, honey glue, typewriter, lodestone,
       nameplate, physics assembler, physics staff, rope, spring, plunger,
-      throttle, merging glue, steering wheel).
-- [ ] Packets are validated server-side: no client-supplied position, entity, or
-      inventory index is trusted without a range/ownership check.
+      throttle, merging glue, steering wheel). 39 classes, 37 registrations,
+      matching upstream exactly.
+- [x] Packets are validated server-side: no client-supplied position, entity, or
+      inventory index is trusted without a range/ownership check. All 23
+      serverbound packets have now been read individually; the four that trusted
+      the client are fixed. See the `.17` note below.
 - [ ] Creative tab reproduces upstream ordering, sections, and hidden-item rules.
-- [ ] Every upstream `simulated:` tag (blocks, items, plus the `c:`, `create:`,
-      `minecraft:`, `sable:` tag contributions) is present.
-- [ ] Recipes: crafting, mechanical crafting, sequenced assembly, filling,
-      processing, and the portable-engine dyeing recipe.
-- [ ] Loot tables for every block.
-- [ ] All 60 upstream advancements, with working triggers.
-- [ ] All 7 upstream statistics track correctly.
-- [ ] Sound events and subtitles registered; no missing-sound log spam.
-- [ ] Full `en_us` lang parity, including tooltips, and the Crowdin languages
-      carried over.
+      The section grouping, ordering, row padding and the `SEARCH_ONLY` /
+      `INVISIBLE` rules are line-for-line upstream's; only the per-section banner
+      render is absent, and that is a V4 item for the reason recorded above.
+      Stays open because whether the tab *looks* right needs a person.
+- [x] Every upstream `simulated:` tag (blocks, items, plus the `c:`, `create:`,
+      `minecraft:`, `sable:` tag contributions) is present — 22 tag files, and
+      every `c:` tag they and the recipes name resolves against what the
+      Homestead stack actually ships. See the `.16` note below.
+- [x] Recipes: crafting, mechanical crafting, sequenced assembly, filling,
+      processing, and the portable-engine dyeing recipe. 73 recipes and their 66
+      unlock advancements.
+- [x] Loot tables for every block — 94, the two without being the Paired Docking
+      Connector and the Physics Assembler Anchor, which upstream declares
+      `noLootTable()`.
+- [x] All 30 upstream advancements, with their triggers registered. (The plan
+      said 60; upstream's `SimAdvancements` declares 30, and the Fabric copy has
+      all of them.) Whether each trigger *fires* is in-game testing.
+- [x] All 7 upstream statistics registered, and present in the menu before first
+      award, as upstream's bootstrap arranges. Whether each increments is
+      in-game testing.
+- [x] Sound events and subtitles registered; no missing-sound log spam. 29
+      definitions in a generated `sounds.json`, every `.ogg` resolving.
+- [x] Full `en_us` lang parity, including tooltips, and the Crowdin languages
+      carried over. 652 keys, containing all 233 of upstream's hand-written ones
+      and every literal key the source names.
 
 ### 1.2 Redstone and logic blocks
 
@@ -461,10 +586,31 @@ nobody re-opens them:**
 - [ ] Measure the assembly scan on a large structure — several thousand blocks
       with heavy glue — and record the number before V1 ships. The per-position
       query above is a large improvement but is not a measurement.
-- [ ] Fabric scanner is missing upstream special cases: honey glue, merging
-      glue, swivel bearing attachment, chain conveyor validation,
-      assembly-preventer blocks, and the config-driven size/range limits.
-      Bring these across as their blocks land.
+- [x] Fabric scanner special cases brought across, now that their blocks exist:
+      honey glue (seeded before the walk and cached per position, at the
+      configured `honeyGlueRange`), swivel bearing attachment, chain conveyor
+      revalidation, the `SimBlockMovementChecks` additional-blocks and
+      attachment hooks this port's own blocks register through, and the
+      configured `maxBlocksMoved` in place of a hard-coded 128,000.
+
+      **Two items on the old list were wrong and are recorded so nobody
+      re-opens them.** Neither is a scanner concern upstream:
+
+      - *Merging glue* appears nowhere in upstream's `SimAssemblyContraption`.
+        It is a block that merges two sub-levels, which is a Sable concept; it
+        has nothing to do with structure discovery.
+      - *Assembly preventer* is `DisassemblyPrevention`, which gates
+        **dis**assembly, not the scan. It was unreferenced on this branch; it is
+        now called from `PhysicsAssemblerBlockEntity.disassembleActive` where
+        upstream calls it. It asks Sable which sub-level contains a position, so
+        against the inert facade it always permits — the call site exists so the
+        rule arrives with V2 rather than being rediscovered.
+
+      One deviation recorded rather than dropped: honey glue entities decide
+      **which blocks join** an assembly, but they do not travel with it. The
+      stand-in transport is a Create `ControlledContraptionEntity`, which carries
+      Create's own `SuperGlueEntity` and knows nothing about honey glue. Carrying
+      them lands with the Sable contraption in V2.
 
 ---
 

@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": {
+      "item": "create:andesite_alloy"
+    },
+    "N": {
+      "tag": "c:iron_nuggets"
+    }
+  },
+  "pattern": [
+    "N",
+    "A"
+  ],
+  "result": {
+    "item": "simulated:iron_handle"
+  },
+  "show_notification": true
+}

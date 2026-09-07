@@ -4,7 +4,10 @@
   "version": "${version}",
   "name": "Create: Simulated (Fabric Port)",
   "description": "Fabric 1.20.1 backport of Create: Simulated, targeted at the Homestead modpack stack.",
-  "authors": ["Creators of Aeronautics", "Fabric port contributors"],
+  "authors": [
+    "Creators of Aeronautics",
+    "Fabric port contributors"
+  ],
   "license": "See LICENSE.md",
   "environment": "*",
   "entrypoints": {
@@ -25,5 +28,10 @@
     "minecraft": "1.20.1",
     "java": ">=17",
     "create": ">=6.0.8.1"
-  }
+  },
+  "mixins": [
+    "simulated.mixins.json"
+  ],
+  "accessWidener": "simulated.accesswidener",
+  "icon": "simulated.png"
 }

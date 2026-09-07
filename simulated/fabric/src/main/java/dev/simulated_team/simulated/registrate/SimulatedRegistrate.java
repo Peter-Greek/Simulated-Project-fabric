@@ -21,6 +21,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import java.util.function.Consumer;
+import java.util.function.BiConsumer;
+import net.minecraft.world.level.ItemLike;
+import dev.simulated_team.simulated.index.SimRegistries;
+import dev.simulated_team.simulated.content.blocks.nav_table.navigation_target.NavigationTarget;
+import dev.simulated_team.simulated.client.BlockPropertiesTooltip;
 
 /**
  * Upstream's Registrate subclass, on the 1.20.1 Registrate API.
@@ -29,9 +35,12 @@ import java.util.function.Supplier;
  * {@code accept} hands back {@link RegistryEntry} with one type parameter and
  * takes a {@link RegistryObject} rather than NeoForge's {@code DeferredHolder}.
  *
- * <p>The navigation-target and property-tooltip helpers are not here yet — they
- * register into custom registries whose element types have not been ported. They
- * land with the Navigation Table and the block-properties tooltip.
+ * <p>The navigation-target and property-tooltip helpers register into custom
+ * registries. Upstream builds those through Veil's {@code RegistrationProvider};
+ * here they are Fabric registries created by the replacement provider, and the
+ * entries go in directly rather than through Registrate's deferred pipeline,
+ * because on 1.20.1 Registrate's {@code simple} does not take an arbitrary
+ * registry key.
  */
 public class SimulatedRegistrate extends CreateRegistrate {
 
@@ -79,4 +88,48 @@ public class SimulatedRegistrate extends CreateRegistrate {
         TAB_ITEMS.add(() -> BuiltInRegistries.ITEM.get(item));
         ITEM_TO_SECTION.put(item, this.currentSection);
     }
+
+    /** Which item each navigation target reads from, so it can be attached to it. */
+    public static final Map<ResourceLocation, Supplier<ItemLike>> NAVIGATION_TARGET_ITEMS =
+            new ConcurrentHashMap<>();
+
+    public <T extends NavigationTarget> T navTarget(final String name, final NonNullSupplier<T> navTarget,
+                                                    final Supplier<ItemLike> itemSupplier) {
+        final ResourceLocation id = new ResourceLocation(this.getModid(), name);
+        final T entry = Registry.register(SimRegistries.NAVIGATION_TARGET, id, navTarget.get());
+        NAVIGATION_TARGET_ITEMS.put(id, itemSupplier);
+        return entry;
+    }
+
+    public <T extends NavigationTarget> T navTarget(final String name, final NonNullSupplier<T> navTarget,
+                                                    final ItemLike item) {
+        return this.navTarget(name, navTarget, () -> item);
+    }
+
+    public <T extends BlockPropertiesTooltip.Entry> T propertyTooltip(final String name,
+                                                                     final NonNullSupplier<T> tooltipFunction) {
+        return Registry.register(SimRegistries.propertyTooltip(),
+                new ResourceLocation(this.getModid(), name), tooltipFunction.get());
+    }
+
+    /**
+     * Upstream attaches each navigation target to its item as a default data
+     * component. 1.20.1 has no default components, so the Navigation Table asks
+     * this map which target an item carries instead; the hook is kept so the
+     * call site reads as upstream's.
+     */
+    public static void onAddDefaultComponents(final BiConsumer<ItemLike, Consumer<Object>> modify) {
+    }
+
+    /** The navigation target registered for this item, or null if it has none. */
+    @javax.annotation.Nullable
+    public static NavigationTarget navigationTargetFor(final ItemLike item) {
+        for (final Map.Entry<ResourceLocation, Supplier<ItemLike>> entry : NAVIGATION_TARGET_ITEMS.entrySet()) {
+            if (entry.getValue().get() == item) {
+                return SimRegistries.NAVIGATION_TARGET.get(entry.getKey());
+            }
+        }
+        return null;
+    }
+
 }

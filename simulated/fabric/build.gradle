@@ -16,6 +16,7 @@ repositories {
     maven { url = 'https://maven.jamieswhiteshirt.com/libs-release' }
     maven { url = 'https://maven.blamejared.com' }
     maven { url = 'https://maven.tterrag.com/' }
+    maven { url = 'https://maven.squiddev.cc' }
 }
 
 dependencies {
@@ -30,9 +31,19 @@ dependencies {
     // runtime without us bundling it. Declared explicitly because we compile
     // against it directly rather than only through Create's own API.
     modCompileOnly "com.tterrag.registrate_fabric:Registrate:${registrate_version}"
+
+    // Soft integrations. JEI is in the Homestead pack; ComputerCraft is not, and
+    // both are compiled against but never required at runtime — the integration
+    // classes are only reached when the mod is loaded.
+    modCompileOnly "mezz.jei:jei-${minecraft_version}-fabric-api:${jei_version}"
+    modCompileOnly "cc.tweaked:cc-tweaked-${minecraft_version}-fabric-api:${cc_tweaked_version}"
 }
 
 loom {
+    // Upstream's widener, copied unchanged: it is already in Fabric's own
+    // format, and the members it opens are the ones the port needs too.
+    accessWidenerPath = file('src/main/resources/simulated.accesswidener')
+
     runs {
         client {
             client()
@@ -66,6 +77,10 @@ sourceSets.main.resources.srcDir 'src/main/generated'
 processResources {
     inputs.property 'version', project.version
 
+    // The generated tree is listed after the upstream one, so where both
+    // describe the same file the generated version is the one that ships.
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+
     // Datagen's hash cache lives beside its output; it is a build artefact.
     exclude '.cache/**'
 
@@ -73,27 +88,24 @@ processResources {
         expand version: project.version
     }
 
-    // Textures and hand-authored models are still pulled from the upstream tree
-    // subsystem by subsystem. Everything Registrate can describe is generated
-    // into src/main/generated instead.
+    // Every hand-authored asset comes from the upstream tree. What Registrate
+    // can describe — blockstates, most models, loot tables, tags, recipes,
+    // lang — is generated into src/main/generated instead, and wins where both
+    // exist, because the generated tree is listed after this one.
     //
-    // The whole steering_wheel directory is taken, not just its .json: the item
-    // model and the wheel partial are OBJ models and need their .obj and .mtl
-    // beside them.
+    // Two exclusions, both recorded in FABRIC_PORT_PLAN.md:
+    //   pinwheel/  is Veil's shader tree, and this port replaces Veil.
+    //   data/sable/ tags a mod that is not on this stack until V2.
     from('../common/src/main/resources') {
-        include 'assets/simulated/models/block/physics_assembler/**'
-        include 'assets/simulated/models/block/steering_wheel/**'
-        include 'assets/simulated/textures/block/physics_assembler.png'
-        include 'assets/simulated/textures/block/steering_wheel.png'
-        include 'assets/simulated/textures/item/gyroscopic_mechanism.png'
-        include 'assets/simulated/textures/item/incomplete_gyroscopic_mechanism.png'
-        include 'assets/simulated/textures/item/engine_assembly.png'
-        include 'assets/simulated/textures/item/incomplete_engine_assembly.png'
+        include 'assets/**'
+        include 'data/**'
+        include 'datagen/**'
+        exclude 'assets/simulated/pinwheel/**'
+        exclude 'data/sable/**'
 
         // Upstream's OBJ models declare NeoForge's loader. Porting Lib supplies
         // the same loader here under its own id, and reads the flip flag as
-        // camelCase. Rewriting on copy keeps the upstream files untouched and
-        // covers every OBJ model brought across from here on.
+        // camelCase. Rewriting on copy keeps the upstream files untouched.
         filesMatching('assets/simulated/models/**/*.json') {
             filter { line ->
                 line.replace('"neoforge:obj"', '"porting_lib:obj"')

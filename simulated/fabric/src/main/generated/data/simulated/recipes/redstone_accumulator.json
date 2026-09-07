@@ -1,0 +1,30 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "B": {
+      "tag": "c:brass_plates"
+    },
+    "Q": {
+      "item": "create:polished_rose_quartz"
+    },
+    "R": {
+      "tag": "c:dusts/redstone"
+    },
+    "S": {
+      "tag": "c:stone"
+    },
+    "T": {
+      "item": "minecraft:redstone_torch"
+    }
+  },
+  "pattern": [
+    " Q ",
+    "RBT",
+    "SSS"
+  ],
+  "result": {
+    "item": "simulated:redstone_accumulator"
+  },
+  "show_notification": true
+}

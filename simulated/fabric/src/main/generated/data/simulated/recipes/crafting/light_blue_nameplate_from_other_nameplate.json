@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "building",
+  "group": "simualted:nameplate_dyeing",
+  "ingredients": [
+    {
+      "tag": "c:light_blue_dyes"
+    },
+    {
+      "tag": "simulated:nameplate_items"
+    }
+  ],
+  "result": {
+    "item": "simulated:light_blue_nameplate"
+  }
+}

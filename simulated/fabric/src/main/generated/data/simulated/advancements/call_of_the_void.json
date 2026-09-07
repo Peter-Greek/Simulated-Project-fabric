@@ -1,0 +1,30 @@
+{
+  "parent": "simulated:applied_kinematics",
+  "criteria": {
+    "0": {
+      "trigger": "simulated:call_of_the_void_builtin"
+    }
+  },
+  "display": {
+    "announce_to_chat": true,
+    "description": {
+      "color": "#FFDBA213",
+      "translate": "advancement.simulated.call_of_the_void.desc"
+    },
+    "frame": "goal",
+    "hidden": true,
+    "icon": {
+      "item": "minecraft:end_portal_frame"
+    },
+    "show_toast": true,
+    "title": {
+      "translate": "advancement.simulated.call_of_the_void"
+    }
+  },
+  "requirements": [
+    [
+      "0"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

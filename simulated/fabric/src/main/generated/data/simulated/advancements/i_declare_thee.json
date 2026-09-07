@@ -1,0 +1,30 @@
+{
+  "parent": "simulated:not_gonna_sugarcoat_it",
+  "criteria": {
+    "0": {
+      "trigger": "simulated:i_declare_thee_builtin"
+    }
+  },
+  "display": {
+    "announce_to_chat": true,
+    "description": {
+      "color": "#FFDBA213",
+      "translate": "advancement.simulated.i_declare_thee.desc"
+    },
+    "frame": "task",
+    "hidden": false,
+    "icon": {
+      "item": "minecraft:air"
+    },
+    "show_toast": true,
+    "title": {
+      "translate": "advancement.simulated.i_declare_thee"
+    }
+  },
+  "requirements": [
+    [
+      "0"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

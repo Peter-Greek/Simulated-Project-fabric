@@ -24,15 +24,10 @@ public final class SimulatedFabricClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        // Model parts are client-only: PartialModel lives in Flywheel's baked
-        // model package, which a dedicated server cannot load. Touched here, not
-        // from the common init.
-        SimPartialModels.init();
-
-        // Creative-tab sections are assets, so the listener belongs on the
-        // client resource reload rather than the server data reload.
-        ResourceManagerHelper.get(PackType.CLIENT_RESOURCES)
-                .registerReloadListener(SimResourceManagers.SIMULATED_SECTION);
+        // Everything client-side that upstream does in SimulatedClient: partial
+        // models, the block-properties tooltip, the codec-driven asset managers
+        // and the ponder plugin.
+        dev.simulated_team.simulated.SimulatedClient.init();
 
         ClientPlayNetworking.registerGlobalReceiver(
                 SimulatedFabricNetworking.CONTRAPTION_POSITION,

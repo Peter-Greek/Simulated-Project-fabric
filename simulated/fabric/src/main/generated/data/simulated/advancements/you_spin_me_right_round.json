@@ -1,0 +1,30 @@
+{
+  "parent": "simulated:applied_kinematics",
+  "criteria": {
+    "0": {
+      "trigger": "simulated:you_spin_me_right_round_builtin"
+    }
+  },
+  "display": {
+    "announce_to_chat": true,
+    "description": {
+      "color": "#FFDBA213",
+      "translate": "advancement.simulated.you_spin_me_right_round.desc"
+    },
+    "frame": "task",
+    "hidden": false,
+    "icon": {
+      "item": "minecraft:air"
+    },
+    "show_toast": true,
+    "title": {
+      "translate": "advancement.simulated.you_spin_me_right_round"
+    }
+  },
+  "requirements": [
+    [
+      "0"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

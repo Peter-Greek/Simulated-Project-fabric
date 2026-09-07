@@ -5,6 +5,7 @@ import dev.simulated_team.simulated.index.SimBlocks;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
+import dev.simulated_team.simulated.command.SimCommand;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlockEntity;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblyContraption;
 import net.fabricmc.api.ModInitializer;
@@ -27,6 +28,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import dev.simulated_team.simulated.fabric.service.FabricSimConfigService;
 
 /**
  * Fabric bootstrap for the Minecraft 1.20.1 / Homestead port.
@@ -37,10 +39,18 @@ public final class SimulatedFabric implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        // The config has to exist before anything reads a value out of it,
+        // which registration does.
+        FabricSimConfigService.register();
+
         SimulatedFabricContent.register();
 
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
-                registerCommands(dispatcher));
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            // Upstream's own /simulated subcommands, then this port's
+            // diagnostics. Brigadier merges the two literal roots.
+            SimCommand.register(dispatcher, registryAccess);
+            registerCommands(dispatcher);
+        });
 
         // The current Create-backed transport is deliberately temporary. Do not
         // persist its invisible controller relationship across server lifetimes;
@@ -156,7 +166,7 @@ public final class SimulatedFabric implements ModInitializer {
         }
 
         final BlockPos pos = ((BlockHitResult) hit).getBlockPos();
-        return source.getLevel().getBlockState(pos).is(SimBlocks.PHYSICS_ASSEMBLER.get())
+        return SimBlocks.PHYSICS_ASSEMBLER.has(source.getLevel().getBlockState(pos))
                 ? pos
                 : null;
     }

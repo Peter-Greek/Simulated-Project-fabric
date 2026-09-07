@@ -1,5 +1,7 @@
 package dev.simulated_team.simulated.content.blocks.physics_assembler;
 
+import com.simibubi.create.content.contraptions.AssemblyException;
+import dev.simulated_team.simulated.content.blocks.physics_assembler.assembly_preventer.DisassemblyPrevention;
 import dev.simulated_team.simulated.index.SimBlocks;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
@@ -18,6 +20,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.UUID;
+import net.createmod.catnip.animation.LerpedFloat;
 
 /**
  * Fabric 1.20.1 Physics Assembler controller.
@@ -29,6 +32,22 @@ import java.util.UUID;
  * an IControlContraption block entity at a stable world position.
  */
 public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IControlContraption {
+
+    /** Lever animation state; see {@link #clientFlickLeverTo}. */
+    private static final float FLICKED_ANGLE_DEGREES = 45.0f;
+
+    private static final double LEVER_CHASE_SPEED = 0.75f;
+
+    protected final LerpedFloat visualAngle = LerpedFloat.linear();
+
+    private boolean leverInitialized;
+
+    protected boolean holdingLever;
+
+    private boolean controlledByPlayer;
+
+    private float playerAngle;
+
     public enum AssemblyState {
         IDLE,
         ASSEMBLING,
@@ -86,7 +105,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         if (level == null || level.isClientSide) {
             return OperationResult.failure("server level unavailable");
         }
-        if (!getBlockState().is(SimBlocks.PHYSICS_ASSEMBLER.get())) {
+        if (!SimBlocks.PHYSICS_ASSEMBLER.has(getBlockState())) {
             return OperationResult.failure("assembly can only begin from a world Physics Assembler");
         }
 
@@ -171,7 +190,19 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
             return OperationResult.failure("no live assembly is attached");
         }
 
-        if (getBlockState().is(SimBlocks.PHYSICS_ASSEMBLER_ANCHOR.get())) {
+        // Upstream gates disassembly on this assembler being the one that made the
+        // sub-level. The check asks Sable which sub-level contains a position, and
+        // Sable is the inert facade here, so it always permits -- but the call site
+        // is kept so the rule arrives with V2 rather than having to be rediscovered.
+        try {
+            if (!DisassemblyPrevention.checkSubLevelForPrimary(level, getBlockPos())) {
+                return OperationResult.failure("another Physics Assembler owns this assembly");
+            }
+        } catch (final AssemblyException exception) {
+            return OperationResult.failure("disassembly refused: " + exception.getMessage());
+        }
+
+        if (SimBlocks.PHYSICS_ASSEMBLER_ANCHOR.has(getBlockState())) {
             return disassembleAnchoredTransport(active);
         }
 
@@ -282,7 +313,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         final BlockPos assemblerTarget = movedAssemblerTarget(active, controllerPos);
 
         active.setContraptionMotion(Vec3.ZERO);
-        if (world.getBlockState(controllerPos).is(SimBlocks.PHYSICS_ASSEMBLER_ANCHOR.get())) {
+        if (SimBlocks.PHYSICS_ASSEMBLER_ANCHOR.has(world.getBlockState(controllerPos))) {
             world.removeBlock(controllerPos, false);
         }
 
@@ -307,7 +338,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
     private static boolean restoreAssemblerIfMissing(final Level world,
                                                      final BlockPos target,
                                                      final PhysicsAssemblyContraption physicsAssembly) {
-        if (world.getBlockState(target).is(SimBlocks.PHYSICS_ASSEMBLER.get())) {
+        if (SimBlocks.PHYSICS_ASSEMBLER.has(world.getBlockState(target))) {
             return true;
         }
         if (!world.isEmptyBlock(target)) {
@@ -478,4 +509,84 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
             activeBlockCount = 0;
         }
     }
+
+    /**
+     * Lever animation, upstream's implementation unchanged. What differs here is
+     * only which question decides the lever position: upstream asks whether the
+     * block is inside a sub-level, this port asks whether its Create stand-in
+     * contraption is assembled.
+     */
+    public void clientFlickLeverTo(final boolean flicked) {
+        this.visualAngle.chase(flicked ? FLICKED_ANGLE_DEGREES : 0.0f, LEVER_CHASE_SPEED, LerpedFloat.Chaser.EXP);
+    }
+
+    public void jerkLever() {
+        this.visualAngle.setValue(this.visualAngle.getChaseTarget());
+        this.visualAngle.setValue(this.visualAngle.getChaseTarget());
+    }
+
+    protected void initializeLeverPosition() {
+        if (!this.leverInitialized) {
+            this.clientFlickLeverTo(this.isAssembled());
+            this.jerkLever();
+            this.leverInitialized = true;
+        }
+    }
+
+    public void setClientHoldLeverInPlace(final boolean holding) {
+        this.holdingLever = holding;
+    }
+
+    public void updateControlledByPlayer(final float angle) {
+        this.controlledByPlayer = true;
+        this.playerAngle = angle;
+    }
+
+    public boolean stopControllingPlayer() {
+        if (!this.controlledByPlayer) {
+            return false;
+        }
+        this.controlledByPlayer = false;
+        return true;
+    }
+
+    public float getClientAngle(final float partialTicks) {
+        return this.visualAngle.getValue(partialTicks);
+    }
+
+    /** Advances the lever animation; called from the block entity ticker. */
+    public void tickLever() {
+        if (this.holdingLever) {
+            this.visualAngle.setValue(this.visualAngle.getValue());
+        } else if (this.controlledByPlayer) {
+            this.visualAngle.setValue(this.visualAngle.getValue());
+            this.visualAngle.setValueNoUpdate(this.playerAngle);
+        } else {
+            this.visualAngle.tickChaser();
+        }
+    }
+
+    /** Upstream's block entity is a Create SmartBlockEntity, which knows this. */
+    public boolean isVirtual() {
+        return false;
+    }
+
+    /**
+     * Whether this assembler currently has a structure in the air. Upstream asks
+     * whether the block sits inside a sub-level; the stand-in asks whether its
+     * Create contraption exists.
+     */
+    /**
+     * Whether this assembler is the one that made the structure it is part of.
+     * Only one assembler may disassemble a structure; with the Create stand-in,
+     * that is the one holding the contraption.
+     */
+    public boolean isPrimaryAssembler() {
+        return this.isAssembled();
+    }
+
+    public boolean isAssembled() {
+        return this.movedContraption != null && this.movedContraption.isAlive();
+    }
+
 }

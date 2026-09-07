@@ -25,6 +25,13 @@ import java.util.function.Supplier;
  * Recorded in FABRIC_PORT_PLAN.md as a V1 deviation.
  */
 public class SimulatedCreativeTab {
+
+    /**
+     * Which row the creative menu is scrolled to. The menu writes it as it
+     * scrolls and the section padding reads it, the same as upstream.
+     */
+    public static int CURRENT_ROW = 0;
+
     private static final int ITEMS_PER_ROW = 9;
 
     public static final Map<ResourceLocation, Integer> SECTION_Y_VALUES = new HashMap<>();

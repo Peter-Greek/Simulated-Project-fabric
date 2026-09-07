@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "create:chute"
+    },
+    {
+      "item": "create:shaft"
+    },
+    {
+      "tag": "c:iron_plates"
+    }
+  ],
+  "result": {
+    "count": 2,
+    "item": "simulated:auger_shaft"
+  }
+}

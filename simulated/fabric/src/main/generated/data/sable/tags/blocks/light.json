@@ -1,0 +1,7 @@
+{
+  "replace": false,
+  "values": [
+    "simulated:steering_wheel",
+    "simulated:spring"
+  ]
+}

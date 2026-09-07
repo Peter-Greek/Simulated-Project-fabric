@@ -11,8 +11,14 @@ import com.simibubi.create.content.contraptions.piston.MechanicalPistonBlock.Pis
 import com.simibubi.create.content.contraptions.piston.MechanicalPistonHeadBlock;
 import com.simibubi.create.content.contraptions.piston.PistonExtensionPoleBlock;
 import com.simibubi.create.content.kinetics.base.IRotate;
+import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorBlockEntity;
 import com.simibubi.create.content.kinetics.gantry.GantryShaftBlock;
 import com.simibubi.create.content.trains.bogey.AbstractBogeyBlock;
+import dev.simulated_team.simulated.content.blocks.swivel_bearing.SwivelBearingBlock;
+import dev.simulated_team.simulated.content.entities.honey_glue.HoneyGlueEntity;
+import dev.simulated_team.simulated.index.SimBlockMovementChecks;
+import dev.simulated_team.simulated.index.SimBlocks;
+import dev.simulated_team.simulated.service.SimConfigService;
 import net.createmod.catnip.data.Iterate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -40,7 +46,6 @@ import java.util.Set;
  * rules against the Homestead stack independently from the physics backport.
  */
 public final class FabricAssemblyScanner {
-    private static final int MAX_BLOCKS = 128_000;
 
     /**
      * Upstream searches a per-pair box inflated by 16. A pair reaches one block
@@ -101,7 +106,17 @@ public final class FabricAssemblyScanner {
         // Glue that actually joined two blocks in this assembly. This is what
         // travels with the structure.
         final LinkedHashSet<SuperGlueEntity> connectingGlues = new LinkedHashSet<>();
+        // Honey glue behaves like Super Glue for connection purposes but is seeded
+        // differently: a sheet enclosing the seed is collected up front, so a block
+        // pair inside it connects without either block having been visited first.
+        final Set<HoneyGlueEntity> honeyGlueCache = new HashSet<>();
+        final LinkedHashSet<HoneyGlueEntity> connectingHoneyGlues = new LinkedHashSet<>();
         final MutableStats stats = new MutableStats();
+
+        final int maxBlocksMoved = SimConfigService.INSTANCE.server().assembly.maxBlocksMoved.get();
+        final int honeyGlueRange = SimConfigService.INSTANCE.server().assembly.honeyGlueRange.get();
+
+        addInitialHoneyGlue(level, assemblerPos, startPos, honeyGlueRange, true, honeyGlueCache);
 
         frontier.add(startPos);
         queued.add(startPos);
@@ -138,8 +153,9 @@ public final class FabricAssemblyScanner {
             if (BlockMovementChecks.isBrittle(state)) {
                 stats.brittleBlocks++;
             }
-            if (blocks.size() > MAX_BLOCKS) {
-                return ScanResult.failure("Assembly is larger than the current 128,000 block limit.", pos);
+            if (blocks.size() > maxBlocksMoved) {
+                return ScanResult.failure(
+                        "Assembly is larger than the configured limit of " + maxBlocksMoved + " blocks.", pos);
             }
 
             min = new BlockPos(
@@ -169,6 +185,36 @@ public final class FabricAssemblyScanner {
                     if (enqueue(pos.relative(direction), assemblerPos, frontier, queued)) {
                         stats.bogeyLinks++;
                     }
+                }
+            }
+
+            // A Swivel Bearing carries whatever it faces, and seeds honey glue at
+            // that position, so a structure glued to the bearing's plate travels
+            // with it. Upstream keeps this outside its movement-check API for the
+            // same reason.
+            if (SimBlocks.SWIVEL_BEARING.has(state)) {
+                final BlockPos attachPos = pos.relative(state.getValue(SwivelBearingBlock.FACING));
+                addInitialHoneyGlue(level, pos, attachPos, honeyGlueRange, true, honeyGlueCache);
+                if (enqueue(attachPos, assemblerPos, frontier, queued)) {
+                    stats.swivelBearingLinks++;
+                }
+            }
+
+            // A chain conveyor revalidates its connections before it is picked up;
+            // without this a stale connection travels into the assembly.
+            if (level.getBlockEntity(pos) instanceof final ChainConveyorBlockEntity chainConveyor) {
+                chainConveyor.notifyConnectedToValidate();
+            }
+
+            // Blocks this port's own content contributes -- rope connectors, winches,
+            // handles, linked receivers -- come through the movement-check registry
+            // rather than being special-cased here.
+            final Set<BlockPos> visitedView = Collections.unmodifiableSet(queued);
+            final Queue<BlockPos> additional = new ArrayDeque<>();
+            SimBlockMovementChecks.addAdditionalBlocks(state, level, pos, additional, visitedView);
+            for (final BlockPos additionalPos : additional) {
+                if (enqueue(additionalPos, assemblerPos, frontier, queued)) {
+                    stats.additionalBlockLinks++;
                 }
             }
 
@@ -299,6 +345,7 @@ public final class FabricAssemblyScanner {
             // match is contained in this query, so the neighbour loop below can
             // read the cache alone and still produce identical results.
             primeGlueCache(level, pos, glueCache);
+            primeHoneyGlueCache(level, pos, honeyGlueRange, honeyGlueCache);
 
             for (final BlockPos offset : DIRECTION_OFFSETS) {
                 final BlockPos neighborPos = pos.offset(offset);
@@ -325,11 +372,16 @@ public final class FabricAssemblyScanner {
                         : null;
 
                 final ConnectionType connection = connectionType(
-                        level, pos, state, neighborPos, neighborState, cardinalDirection,
-                        glueCache, connectingGlues);
+                        level, pos, state, neighborPos, neighborState, cardinalDirection, offset,
+                        glueCache, connectingGlues, honeyGlueCache, connectingHoneyGlues);
                 if (connection != ConnectionType.NONE && enqueue(neighborPos, assemblerPos, frontier, queued)) {
                     if (connection == ConnectionType.GLUE) {
                         stats.glueLinks++;
+                        if (BlockMovementChecks.isBrittle(neighborState)) {
+                            stats.glueCarriedBrittle++;
+                        }
+                    } else if (connection == ConnectionType.HONEY_GLUE) {
+                        stats.honeyGlueLinks++;
                         if (BlockMovementChecks.isBrittle(neighborState)) {
                             stats.glueCarriedBrittle++;
                         }
@@ -363,6 +415,69 @@ public final class FabricAssemblyScanner {
         }
     }
 
+    /**
+     * Collects every honey glue sheet containing {@code pos}. Honey glue's search
+     * box is config-driven and much larger than Super Glue's fixed 16, so the
+     * radius is read from the server config rather than assumed.
+     */
+    private static void primeHoneyGlueCache(final Level level,
+                                            final BlockPos pos,
+                                            final int honeyGlueRange,
+                                            final Set<HoneyGlueEntity> honeyGlueCache) {
+        for (final HoneyGlueEntity glue : level.getEntitiesOfClass(
+                HoneyGlueEntity.class,
+                SuperGlueEntity.span(pos, pos).inflate(honeyGlueRange))) {
+            if (glue.contains(pos)) {
+                honeyGlueCache.add(glue);
+            }
+        }
+    }
+
+    /**
+     * Seeds the honey glue cache before the walk starts.
+     *
+     * <p>Upstream does this because a sheet enclosing the seed has to be known
+     * before the first pair is tested; otherwise the first two blocks inside it do
+     * not connect. {@code ignoreEnclosingGlue} drops a sheet that also contains the
+     * anchor, so an assembler sitting inside its own honey glue does not drag the
+     * whole sheet in.
+     */
+    private static void addInitialHoneyGlue(final Level level,
+                                            final BlockPos anchor,
+                                            final BlockPos pos,
+                                            final int honeyGlueRange,
+                                            final boolean ignoreEnclosingGlue,
+                                            final Set<HoneyGlueEntity> honeyGlueCache) {
+        for (final HoneyGlueEntity glue : level.getEntitiesOfClass(
+                HoneyGlueEntity.class,
+                SuperGlueEntity.span(pos, pos).inflate(honeyGlueRange))) {
+            if (anchor != null) {
+                if (ignoreEnclosingGlue && glue.contains(anchor)) {
+                    continue;
+                }
+                if (!glue.contains(pos) && !glue.contains(anchor)) {
+                    continue;
+                }
+            } else if (!glue.contains(pos)) {
+                continue;
+            }
+            honeyGlueCache.add(glue);
+        }
+    }
+
+    private static boolean isHoneyGluedBetween(final BlockPos first,
+                                               final BlockPos second,
+                                               final Set<HoneyGlueEntity> honeyGlueCache,
+                                               final Set<HoneyGlueEntity> connectingHoneyGlues) {
+        for (final HoneyGlueEntity glue : honeyGlueCache) {
+            if (glue.contains(first) && glue.contains(second)) {
+                connectingHoneyGlues.add(glue);
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean enqueue(final BlockPos pos,
                                    final BlockPos assemblerPos,
                                    final Queue<BlockPos> frontier,
@@ -380,13 +495,30 @@ public final class FabricAssemblyScanner {
                                                  final BlockPos neighborPos,
                                                  final BlockState neighborState,
                                                  final Direction cardinalDirection,
+                                                 final BlockPos offset,
                                                  final Set<SuperGlueEntity> glueCache,
-                                                 final Set<SuperGlueEntity> connectingGlues) {
+                                                 final Set<SuperGlueEntity> connectingGlues,
+                                                 final Set<HoneyGlueEntity> honeyGlueCache,
+                                                 final Set<HoneyGlueEntity> connectingHoneyGlues) {
         // Explicit glue is allowed to carry brittle blocks in upstream Simulated.
         // This is why a glued carpet counts even though a carpet cannot seed an
         // assembly by itself.
         if (isGluedBetween(pos, neighborPos, glueCache, connectingGlues)) {
             return ConnectionType.GLUE;
+        }
+
+        // Honey glue joins a pair the same way, and like Super Glue it overrides
+        // brittleness, so it is tested before the directional rules below.
+        if (isHoneyGluedBetween(pos, neighborPos, honeyGlueCache, connectingHoneyGlues)) {
+            return ConnectionType.HONEY_GLUE;
+        }
+
+        // This port's own blocks declare their attachment through the movement-check
+        // registry, which takes an offset rather than a Direction and so also
+        // answers for the diagonal offsets Create's own check cannot.
+        if (SimBlockMovementChecks.checkIsBlockAttachedTowards(
+                neighborState, level, neighborPos, offset.multiply(-1))) {
+            return ConnectionType.ATTACHMENT;
         }
 
         // The remaining Create attachment rules are face-directional and do not
@@ -449,6 +581,7 @@ public final class FabricAssemblyScanner {
     private enum ConnectionType {
         NONE,
         GLUE,
+        HONEY_GLUE,
         ATTACHMENT,
         STICKY
     }
@@ -465,6 +598,9 @@ public final class FabricAssemblyScanner {
         private int pistonLinks;
         private int gantryLinks;
         private int cartAssemblerLinks;
+        private int honeyGlueLinks;
+        private int swivelBearingLinks;
+        private int additionalBlockLinks;
 
         private ScanStats freeze() {
             return new ScanStats(
@@ -478,7 +614,10 @@ public final class FabricAssemblyScanner {
                     bogeyLinks,
                     pistonLinks,
                     gantryLinks,
-                    cartAssemblerLinks);
+                    cartAssemblerLinks,
+                    honeyGlueLinks,
+                    swivelBearingLinks,
+                    additionalBlockLinks);
         }
     }
 
@@ -492,9 +631,12 @@ public final class FabricAssemblyScanner {
                             int bogeyLinks,
                             int pistonLinks,
                             int gantryLinks,
-                            int cartAssemblerLinks) {
+                            int cartAssemblerLinks,
+                            int honeyGlueLinks,
+                            int swivelBearingLinks,
+                            int additionalBlockLinks) {
         public static ScanStats empty() {
-            return new ScanStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            return new ScanStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
 
         public String summary() {
@@ -508,7 +650,10 @@ public final class FabricAssemblyScanner {
                     + ", bogey=" + bogeyLinks
                     + ", piston=" + pistonLinks
                     + ", gantry=" + gantryLinks
-                    + ", cart=" + cartAssemblerLinks + "]";
+                    + ", cart=" + cartAssemblerLinks
+                    + ", honeyGlue=" + honeyGlueLinks
+                    + ", swivelBearing=" + swivelBearingLinks
+                    + ", additional=" + additionalBlockLinks + "]";
         }
     }
 

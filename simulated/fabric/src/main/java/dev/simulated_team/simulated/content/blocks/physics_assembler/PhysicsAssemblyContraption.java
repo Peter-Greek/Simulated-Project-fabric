@@ -51,7 +51,7 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         }
 
         final BlockState assemblerState = world.getBlockState(controllerPos);
-        if (!assemblerState.is(SimBlocks.PHYSICS_ASSEMBLER.get())) {
+        if (!SimBlocks.PHYSICS_ASSEMBLER.has(assemblerState)) {
             return false;
         }
         assemblerFacingId = assemblerState.getValue(PhysicsAssemblerBlock.FACING).get3DDataValue();
@@ -69,7 +69,7 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
 
                 // Register logical steering-wheel rider points before the Create
                 // entity is spawned so clients receive the same seat table.
-                if (state.is(SimBlocks.STEERING_WHEEL.get())) {
+                if (SimBlocks.STEERING_WHEEL.has(state)) {
                     ensureHelmSeat(pos.subtract(controllerPos).above());
                 }
             }

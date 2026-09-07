@@ -1,0 +1,32 @@
+{
+  "type": "create:mechanical_crafting",
+  "acceptMirrored": true,
+  "key": {
+    "A": {
+      "item": "create:andesite_alloy"
+    },
+    "C": {
+      "tag": "c:copper_ingots"
+    },
+    "F": {
+      "item": "create:fluid_pipe"
+    },
+    "M": {
+      "item": "create:precision_mechanism"
+    },
+    "P": {
+      "tag": "c:slimeballs"
+    },
+    "R": {
+      "item": "simulated:rope_coupling"
+    }
+  },
+  "pattern": [
+    "   P",
+    "AMFR",
+    "CC P"
+  ],
+  "result": {
+    "item": "simulated:plunger_launcher"
+  }
+}

@@ -8,7 +8,11 @@ import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAsse
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblyContraption;
 import dev.simulated_team.simulated.content.blocks.steering_wheel.SteeringWheelMovingInteraction;
 import dev.simulated_team.simulated.index.SimBlocks;
+import dev.simulated_team.simulated.backport.physics.api.command.SubLevelArgumentType;
+import dev.simulated_team.simulated.index.fabric.FabricSimStats;
+import dev.simulated_team.simulated.index.fabric.SimFabricRecipeTypes;
 import dev.simulated_team.simulated.registrate.simulated_tab.SimulatedCreativeTab;
+import net.fabricmc.fabric.api.command.v2.ArgumentTypeRegistry;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
@@ -16,6 +20,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.commands.synchronization.SingletonArgumentInfo;
 import net.minecraft.world.item.ItemStack;
 
 /**
@@ -24,6 +29,8 @@ import net.minecraft.world.item.ItemStack;
  */
 public final class SimulatedFabricContent {
     private static Holder.Reference<ContraptionType> physicsAssemblyContraptionType;
+
+    private static CreativeModeTab creativeTab;
 
     private SimulatedFabricContent() {
     }
@@ -35,7 +42,32 @@ public final class SimulatedFabricContent {
                 id("physics_assembly"),
                 contraptionType);
 
+        // Upstream registers the statistics before Simulated.init() too:
+        // block entities award them, so the ids have to exist first.
+        FabricSimStats.register();
+
         Simulated.init();
+
+        // Registrate on 1.20.1 Fabric queues every entry and only writes it to
+        // the game registries when told to. Nothing downstream of here — the
+        // moving-interaction registry, the tab icon — can see a block until it
+        // has run, and an unregistered entry reads back as air rather than
+        // failing, so this has to happen before the first get().
+        Simulated.getRegistrate().register();
+
+        // Upstream registers this through a NeoForge DeferredRegister of its
+        // own, outside Registrate; it has the same standing here.
+        SimFabricRecipeTypes.register();
+
+        // The sub-level argument has to be in the registry even though it
+        // never resolves one: the server serialises the whole command tree
+        // to every client on join, and an unregistered argument type fails
+        // that outright. Using /simulated lock says so, which is the honest
+        // answer until V2.
+        ArgumentTypeRegistry.registerArgumentType(
+                id("sub_levels"),
+                SubLevelArgumentType.class,
+                SingletonArgumentInfo.contextFree(SubLevelArgumentType::subLevels));
 
         MovingInteractionBehaviour.REGISTRY.register(
                 SimBlocks.PHYSICS_ASSEMBLER.get(),
@@ -44,7 +76,7 @@ public final class SimulatedFabricContent {
                 SimBlocks.STEERING_WHEEL.get(),
                 new SteeringWheelMovingInteraction());
 
-        Registry.register(
+        creativeTab = Registry.register(
                 BuiltInRegistries.CREATIVE_MODE_TAB,
                 id("group"),
                 FabricItemGroup.builder()
@@ -54,6 +86,14 @@ public final class SimulatedFabricContent {
                                 stack -> output.accept(stack, CreativeModeTab.TabVisibility.PARENT_TAB_ONLY),
                                 stack -> output.accept(stack, CreativeModeTab.TabVisibility.SEARCH_TAB_ONLY)))
                         .build());
+    }
+
+    /** The tab the loader-neutral code reaches through {@code SimTabService}. */
+    public static CreativeModeTab creativeTab() {
+        if (creativeTab == null) {
+            throw new IllegalStateException("Simulated's creative tab has not been registered yet");
+        }
+        return creativeTab;
     }
 
     public static ContraptionType physicsAssemblyContraptionType() {

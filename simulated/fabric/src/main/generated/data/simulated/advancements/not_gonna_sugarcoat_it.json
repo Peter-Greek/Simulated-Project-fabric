@@ -1,0 +1,30 @@
+{
+  "parent": "simulated:applied_kinematics",
+  "criteria": {
+    "0": {
+      "trigger": "simulated:not_gonna_sugarcoat_it_builtin"
+    }
+  },
+  "display": {
+    "announce_to_chat": false,
+    "description": {
+      "color": "#FFDBA213",
+      "translate": "advancement.simulated.not_gonna_sugarcoat_it.desc"
+    },
+    "frame": "task",
+    "hidden": false,
+    "icon": {
+      "item": "minecraft:air"
+    },
+    "show_toast": true,
+    "title": {
+      "translate": "advancement.simulated.not_gonna_sugarcoat_it"
+    }
+  },
+  "requirements": [
+    [
+      "0"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

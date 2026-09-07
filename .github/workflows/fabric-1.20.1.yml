@@ -24,6 +24,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build Simulated Fabric test jar
         run: ./gradlew :simulated:fabric:build --stacktrace
+      - name: Check every mixin still matches the class it targets
+        run: python3 tools/mixin_audit/run.py
+      - name: Check every model, texture, sound and lang key resolves
+        run: python3 tools/check_resources.py
       - name: Upload test jar
         uses: actions/upload-artifact@v4
         with:
