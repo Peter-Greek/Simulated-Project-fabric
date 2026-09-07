@@ -62,7 +62,8 @@ public final class PhysicsAssemblerMovingInteraction extends MovingInteractionBe
         }
 
         if (player instanceof final ServerPlayer serverPlayer) {
-            SimulatedFabricNetworking.beginFlightControl(serverPlayer, controlled);
+            SimulatedFabricNetworking.beginFlightControl(
+                    serverPlayer, controlled, physicsAssembly.assemblerFacing());
         }
         return true;
     }

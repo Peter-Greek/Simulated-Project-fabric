@@ -3,59 +3,26 @@ package dev.simulated_team.simulated.fabric;
 import com.simibubi.create.api.behaviour.interaction.MovingInteractionBehaviour;
 import com.simibubi.create.api.contraption.ContraptionType;
 import com.simibubi.create.api.registry.CreateBuiltInRegistries;
-import com.simibubi.create.content.processing.sequenced.SequencedAssemblyItem;
-import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerAnchorBlock;
-import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlock;
-import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlockEntity;
+import dev.simulated_team.simulated.Simulated;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerMovingInteraction;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblyContraption;
-import dev.simulated_team.simulated.content.blocks.steering_wheel.SteeringWheelBlock;
 import dev.simulated_team.simulated.content.blocks.steering_wheel.SteeringWheelMovingInteraction;
+import dev.simulated_team.simulated.index.SimBlocks;
+import dev.simulated_team.simulated.registrate.simulated_tab.SimulatedCreativeTab;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.Item;
+import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.entity.BlockEntityType;
-import net.minecraft.world.level.block.state.BlockBehaviour;
 
 /**
- * Loader-neutral content moved from the upstream Simulated registries.
+ * Fabric-side registration that Registrate does not cover: Create's contraption
+ * type and moving-interaction registries, and the creative tab itself.
  */
 public final class SimulatedFabricContent {
-    public static final Item GYROSCOPIC_MECHANISM = new Item(new Item.Properties());
-    public static final SequencedAssemblyItem INCOMPLETE_GYROSCOPIC_MECHANISM =
-            new SequencedAssemblyItem(new Item.Properties());
-
-    public static final Item ENGINE_ASSEMBLY = new Item(new Item.Properties());
-    public static final SequencedAssemblyItem INCOMPLETE_ENGINE_ASSEMBLY =
-            new SequencedAssemblyItem(new Item.Properties());
-
-    public static final PhysicsAssemblerBlock PHYSICS_ASSEMBLER = new PhysicsAssemblerBlock(
-            BlockBehaviour.Properties.of().strength(2.5F, 6.0F).noOcclusion());
-
-    public static final SteeringWheelBlock STEERING_WHEEL = new SteeringWheelBlock(
-            BlockBehaviour.Properties.of().strength(2.5F, 6.0F).noOcclusion());
-
-    /**
-     * No item form: this block only exists while the visible assembler is part
-     * of a moving Create contraption.
-     */
-    public static final PhysicsAssemblerAnchorBlock PHYSICS_ASSEMBLER_ANCHOR = new PhysicsAssemblerAnchorBlock(
-            BlockBehaviour.Properties.of().strength(-1.0F, 3600000.0F).noCollission().noOcclusion());
-
-    public static final BlockEntityType<PhysicsAssemblerBlockEntity> PHYSICS_ASSEMBLER_BLOCK_ENTITY =
-            BlockEntityType.Builder.of(
-                    PhysicsAssemblerBlockEntity::new,
-                    PHYSICS_ASSEMBLER,
-                    PHYSICS_ASSEMBLER_ANCHOR)
-                    .build(null);
-
     private static Holder.Reference<ContraptionType> physicsAssemblyContraptionType;
 
     private SimulatedFabricContent() {
@@ -68,20 +35,13 @@ public final class SimulatedFabricContent {
                 id("physics_assembly"),
                 contraptionType);
 
-        registerItem("gyroscopic_mechanism", GYROSCOPIC_MECHANISM);
-        registerItem("incomplete_gyroscopic_mechanism", INCOMPLETE_GYROSCOPIC_MECHANISM);
-        registerItem("engine_assembly", ENGINE_ASSEMBLY);
-        registerItem("incomplete_engine_assembly", INCOMPLETE_ENGINE_ASSEMBLY);
-        registerBlockWithItem("physics_assembler", PHYSICS_ASSEMBLER);
-        registerBlockWithItem("steering_wheel", STEERING_WHEEL);
-        registerBlock("physics_assembler_anchor", PHYSICS_ASSEMBLER_ANCHOR);
-        Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, id("physics_assembler"), PHYSICS_ASSEMBLER_BLOCK_ENTITY);
+        Simulated.init();
 
         MovingInteractionBehaviour.REGISTRY.register(
-                PHYSICS_ASSEMBLER,
+                SimBlocks.PHYSICS_ASSEMBLER.get(),
                 new PhysicsAssemblerMovingInteraction());
         MovingInteractionBehaviour.REGISTRY.register(
-                STEERING_WHEEL,
+                SimBlocks.STEERING_WHEEL.get(),
                 new SteeringWheelMovingInteraction());
 
         Registry.register(
@@ -89,13 +49,10 @@ public final class SimulatedFabricContent {
                 id("group"),
                 FabricItemGroup.builder()
                         .title(Component.translatable("itemGroup.simulated.group"))
-                        .icon(() -> new ItemStack(PHYSICS_ASSEMBLER))
-                        .displayItems((parameters, output) -> {
-                            output.accept(PHYSICS_ASSEMBLER);
-                            output.accept(STEERING_WHEEL);
-                            output.accept(GYROSCOPIC_MECHANISM);
-                            output.accept(ENGINE_ASSEMBLY);
-                        })
+                        .icon(() -> new ItemStack(SimBlocks.PHYSICS_ASSEMBLER.get()))
+                        .displayItems((parameters, output) -> SimulatedCreativeTab.processItems(
+                                stack -> output.accept(stack, CreativeModeTab.TabVisibility.PARENT_TAB_ONLY),
+                                stack -> output.accept(stack, CreativeModeTab.TabVisibility.SEARCH_TAB_ONLY)))
                         .build());
     }
 
@@ -106,21 +63,7 @@ public final class SimulatedFabricContent {
         return physicsAssemblyContraptionType.value();
     }
 
-    private static void registerItem(final String path, final Item item) {
-        Registry.register(BuiltInRegistries.ITEM, id(path), item);
-    }
-
-    private static void registerBlockWithItem(final String path, final Block block) {
-        final ResourceLocation id = id(path);
-        Registry.register(BuiltInRegistries.BLOCK, id, block);
-        Registry.register(BuiltInRegistries.ITEM, id, new BlockItem(block, new Item.Properties()));
-    }
-
-    private static void registerBlock(final String path, final Block block) {
-        Registry.register(BuiltInRegistries.BLOCK, id(path), block);
-    }
-
     private static ResourceLocation id(final String path) {
-        return new ResourceLocation(SimulatedFabric.MOD_ID, path);
+        return new ResourceLocation(Simulated.MOD_ID, path);
     }
 }

@@ -1,5 +1,6 @@
 package dev.simulated_team.simulated.content.blocks.physics_assembler;
 
+import dev.simulated_team.simulated.index.SimBlockEntityTypes;
 import com.simibubi.create.content.equipment.wrench.IWrenchable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -101,7 +102,7 @@ public final class PhysicsAssemblerBlock extends Block implements EntityBlock, I
 
     @Override
     public BlockEntity newBlockEntity(final BlockPos pos, final BlockState state) {
-        return new PhysicsAssemblerBlockEntity(pos, state);
+        return SimBlockEntityTypes.PHYSICS_ASSEMBLER.create(pos, state);
     }
 
     @Override

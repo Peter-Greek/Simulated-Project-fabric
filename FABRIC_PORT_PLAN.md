@@ -200,6 +200,103 @@ transport; nothing else is a stand-in.
 
 ### 1.1 Foundations
 
+**Notes log — Homestead `.14`, registration backbone.**
+
+The port now registers content through **Registrate**, not hand-rolled
+`Registry.register` calls, and the resource tree is **generated**, not
+hand-written. This was the enabling decision for the rest of V1: upstream
+describes each block's blockstate, models, loot table, tags, recipe and lang
+name in the same builder chain that registers it, so porting a block becomes
+copying that chain rather than authoring six JSON files per block per dye
+colour. `SimulatedRegistrate`, `CreativeTabItemTransforms` and the creative-tab
+item ordering came across from upstream; the physics assembler, its anchor, the
+steering wheel and the four ingredient items were moved onto it.
+
+Run `./gradlew :simulated:fabric:runDatagen` after changing registered content
+and **commit `simulated/fabric/src/main/generated`** — CI builds from the
+committed output and does not regenerate it.
+
+Deviations forced by the 1.20.1 stack, all recorded rather than dropped:
+
+- `SimulatedRegistrate.navTarget` / `.propertyTooltip` are not ported yet. They
+  register into custom registries whose element types (`NavigationTarget`,
+  `BlockPropertiesTooltip.Entry`) do not exist here yet; they land with the
+  Navigation Table. Upstream builds those registries through Veil's
+  `RegistrationProvider`, which is also not on this stack — 1.20.1 Fabric needs
+  `FabricRegistryBuilder` instead.
+- `SimpleResourceManager` was rewritten without Veil's `CodecReloadListener`;
+  behaviour is the same.
+- `SimulatedSection` carries colours as ARGB ints rather than Veil `Colorc`, and
+  its title round-trips through `Component.Serializer` because component codecs
+  arrived in 1.20.5. The JSON shape upstream writes is unchanged.
+- `SimulatedCreativeTab` ports section grouping, ordering, visibility and row
+  padding. The per-section **banner rendering is not ported** — it needs
+  `GuiGraphics#blitSprite` and `Minecraft#getGuiSprites`, both 1.20.2+. Nothing
+  in this mod depends on it; it matters when Aeronautics and Offroad add their
+  own sections in V4, so it is a V4 item, not a silent drop.
+- Datagen runs as a **client** run configuration, hand-written in
+  `build.gradle`. Loom 1.8.13's `fabricApi.configureDataGeneration()` only
+  builds a dedicated-server run, and blockstate generation touches client-only
+  classes such as `BlockModelRotation`.
+- The datagen `ExistingFileHelper` is built with validation disabled rather than
+  via `withResourcesFromArg()`, which reaches for `Minecraft.getInstance()`.
+  Nothing checks that a referenced parent model exists; the game's own
+  missing-model warnings are what V1 ships on.
+
+**Notes log — Homestead `.15`, four defects from in-game testing of `.14`.**
+
+- **The Steering Wheel item had no icon.** Its item model parents upstream's
+  `block/steering_wheel/item`, which is an OBJ model declaring NeoForge's
+  `neoforge:obj` loader and referencing an `.obj` and `.mtl` the build never
+  copied — `processResources` pulled only `*.json` from that directory. The
+  whole directory is copied now, and JSON models are filtered on copy to rewrite
+  `neoforge:obj`/`forge:obj` to `porting_lib:obj` and `flip_v` to Porting Lib's
+  `flipV`. The rewrite is generic, so every OBJ model brought across from here on
+  is covered without touching the upstream files.
+- **The wheel rim was missing in world.** `block.json` is only the casing; the
+  rim is the `wheel` OBJ partial, which upstream draws from a block entity
+  renderer because it turns and because it overhangs its own block. A minimal
+  `SteeringWheelBlockEntity` and `SteeringWheelRenderer` now draw it, using
+  upstream's transform unchanged. Cut down from upstream: no kinetic shaft stub,
+  no plank-material swapping, no Flywheel visual, and the rim does not yet turn.
+  Because there is no visual, the renderer does **not** bail out when
+  visualisation is supported, unlike upstream's — it is the only thing drawing
+  the rim on any backend. The kinetic block entity is still V1 §1.4.
+- **The Create wrench did nothing to the Steering Wheel.** Upstream's block
+  implements `IRotate`, which extends `IWrenchable`; the port's shell block
+  implemented neither. It implements `IWrenchable` now, on Create's defaults:
+  wrenching the top or bottom face turns it, sneak-wrenching removes it, and a
+  side face does nothing, as for Create's own horizontal blocks.
+- **The helm drove the wrong way.** Two separate bugs in the stand-in vehicle
+  controller, both now fixed:
+  1. Forward was computed from the contraption's own rotation angle alone, so
+     the craft always started driving world-south no matter which way the wheel
+     pointed. The helm now takes the control block's facing as a
+     contraption-local heading and puts it through Create's own
+     `applyRotation`, so the heading tracks the craft as it yaws and matches
+     exactly what Create renders and collides against. Clicking a Steering Wheel
+     drives the way that wheel points; clicking the moving assembler drives the
+     way the assembler faces.
+  2. Yaw was applied with the wrong sign. `VecHelper.rotate` takes local +Z
+     toward +X, so a rising contraption angle turns the craft anticlockwise —
+     pressing D turned it left, and the craft travelled opposite to the way it
+     visibly turned. The angle delta is negated now.
+
+Confirmed in game on `.15`: icon, wheel rim, wrench and steering all correct.
+One thing tested and deliberately left alone — **the pilot sits on top of the
+wheel**. That is not upstream behaviour: upstream's Steering Wheel seats nobody,
+it is a control block you stand at, and the riding comes from this port's
+stand-in helm. The seat exists because a player who is not riding the Create
+contraption slides off it as it moves; there is no contraption-relative standing
+until Sable. It goes away in V3 along with the rest of the hand-rolled helm.
+
+Two fixes fell out of moving to the generated resources:
+
+- The **Steering Wheel had no loot table** and dropped nothing when broken. It
+  has one now.
+- The Steering Wheel item model now parents `block/steering_wheel/item`, the
+  upstream custom item model, rather than the in-world block model.
+
 - [ ] All Simulated registries live (blocks, items, block entities, entities,
       menus, particles, sounds, data serializers, stats, tags, recipe types).
 - [ ] Server config exists and is honoured: assembly limits, kinetics, stress,

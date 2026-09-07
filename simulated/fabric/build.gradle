@@ -15,6 +15,7 @@ repositories {
     maven { url = 'https://raw.githubusercontent.com/Fuzss/modresources/main/maven' }
     maven { url = 'https://maven.jamieswhiteshirt.com/libs-release' }
     maven { url = 'https://maven.blamejared.com' }
+    maven { url = 'https://maven.tterrag.com/' }
 }
 
 dependencies {
@@ -24,6 +25,11 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
     modImplementation "com.simibubi.create:create-fabric:${create_fabric_version}"
+
+    // Nested inside the Create build Homestead ships, so it is present at
+    // runtime without us bundling it. Declared explicitly because we compile
+    // against it directly rather than only through Create's own API.
+    modCompileOnly "com.tterrag.registrate_fabric:Registrate:${registrate_version}"
 }
 
 loom {
@@ -36,32 +42,65 @@ loom {
             server()
             name = 'Homestead Fabric Server'
         }
+        // Hand-rolled rather than fabricApi.configureDataGeneration(): that
+        // helper only builds a dedicated-server run on Loom 1.8, and blockstate
+        // and model generation touches client-only classes.
+        datagen {
+            client()
+            name = 'Data Generation'
+            runDir 'build/datagen'
+            vmArg '-Dfabric-api.datagen'
+            vmArg "-Dfabric-api.datagen.output-dir=${file('src/main/generated')}"
+            vmArg '-Dfabric-api.datagen.modid=simulated'
+            vmArg '-Dfabric-api.datagen.strict-validation=false'
+        }
     }
 }
 
+// Registrate describes blockstates, models, lang, loot and recipes in the same
+// place the content is registered. Generating them keeps the resource tree in
+// step with the Java as the port grows, instead of hand-writing a JSON file per
+// block per dye colour.
+sourceSets.main.resources.srcDir 'src/main/generated'
+
 processResources {
     inputs.property 'version', project.version
+
+    // Datagen's hash cache lives beside its output; it is a build artefact.
+    exclude '.cache/**'
 
     filesMatching('fabric.mod.json') {
         expand version: project.version
     }
 
-    // Pull only upstream resources that have been explicitly backported or
-    // validated for the current 1.20.1 milestone. Do not package the complete
-    // 1.21.1 resource tree.
+    // Textures and hand-authored models are still pulled from the upstream tree
+    // subsystem by subsystem. Everything Registrate can describe is generated
+    // into src/main/generated instead.
+    //
+    // The whole steering_wheel directory is taken, not just its .json: the item
+    // model and the wheel partial are OBJ models and need their .obj and .mtl
+    // beside them.
     from('../common/src/main/resources') {
         include 'assets/simulated/models/block/physics_assembler/**'
-        include 'assets/simulated/models/block/steering_wheel/*.json'
+        include 'assets/simulated/models/block/steering_wheel/**'
         include 'assets/simulated/textures/block/physics_assembler.png'
         include 'assets/simulated/textures/block/steering_wheel.png'
         include 'assets/simulated/textures/item/gyroscopic_mechanism.png'
         include 'assets/simulated/textures/item/incomplete_gyroscopic_mechanism.png'
         include 'assets/simulated/textures/item/engine_assembly.png'
         include 'assets/simulated/textures/item/incomplete_engine_assembly.png'
-    }
-    from('../common/src/generated/resources') {
-        include 'assets/simulated/blockstates/physics_assembler.json'
-        include 'assets/simulated/models/item/physics_assembler.json'
+
+        // Upstream's OBJ models declare NeoForge's loader. Porting Lib supplies
+        // the same loader here under its own id, and reads the flip flag as
+        // camelCase. Rewriting on copy keeps the upstream files untouched and
+        // covers every OBJ model brought across from here on.
+        filesMatching('assets/simulated/models/**/*.json') {
+            filter { line ->
+                line.replace('"neoforge:obj"', '"porting_lib:obj"')
+                    .replace('"forge:obj"', '"porting_lib:obj"')
+                    .replace('"flip_v"', '"flipV"')
+            }
+        }
     }
 }
 

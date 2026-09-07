@@ -1,0 +1,7 @@
+{
+  "replace": false,
+  "values": [
+    "simulated:physics_assembler",
+    "simulated:steering_wheel"
+  ]
+}

@@ -1,12 +1,16 @@
 package dev.simulated_team.simulated.content.blocks.steering_wheel;
 
+import com.simibubi.create.content.equipment.wrench.IWrenchable;
+import dev.simulated_team.simulated.index.SimBlockEntityTypes;
 import net.createmod.catnip.math.VoxelShaper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
@@ -23,7 +27,7 @@ import java.util.function.Predicate;
  * depend on systems being backported with Sable. For the temporary Create
  * transport this block acts as a real moving helm interaction target.
  */
-public final class SteeringWheelBlock extends HorizontalDirectionalBlock {
+public final class SteeringWheelBlock extends HorizontalDirectionalBlock implements IWrenchable, EntityBlock {
     public static final BooleanProperty ON_FLOOR = BooleanProperty.create("on_floor");
 
     // Geometry copied from upstream SimBlockShapes: a mount box plus the wheel
@@ -41,6 +45,15 @@ public final class SteeringWheelBlock extends HorizontalDirectionalBlock {
                     Block.box(2.0D, 2.0D, 0.0D, 14.0D, 12.0D, 16.0D),
                     Block.box(-1.0D, 13.5D, 4.0D, 17.0D, 15.5D, 22.0D)),
             Direction.UP);
+
+    /**
+     * The direction a pilot at this wheel is facing, and so the direction the
+     * craft drives. {@code FACING} is set to the opposite of the placer's look
+     * direction, so the wheel points back at whoever is steering it.
+     */
+    public static Direction helmForward(final BlockState state) {
+        return state.getValue(FACING).getOpposite();
+    }
 
     public SteeringWheelBlock(final Properties properties) {
         super(properties);
@@ -76,8 +89,25 @@ public final class SteeringWheelBlock extends HorizontalDirectionalBlock {
     }
 
     @Override
+    public BlockEntity newBlockEntity(final BlockPos pos, final BlockState state) {
+        return SimBlockEntityTypes.STEERING_WHEEL.create(pos, state);
+    }
+
+    @Override
     protected void createBlockStateDefinition(final StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(FACING, ON_FLOOR);
+    }
+
+    /**
+     * Wrenching the top or bottom face turns the wheel; sneak-wrenching removes
+     * it. Both come from Create's defaults, which read the same
+     * {@code HORIZONTAL_FACING} property this block uses. Wrenching a side face
+     * does nothing, as it does for Create's own horizontal blocks — floor and
+     * ceiling mounting is chosen at placement.
+     */
+    @Override
+    public BlockState getRotatedBlockState(final BlockState originalState, final Direction targetedFace) {
+        return IWrenchable.super.getRotatedBlockState(originalState, targetedFace);
     }
 
     @Override

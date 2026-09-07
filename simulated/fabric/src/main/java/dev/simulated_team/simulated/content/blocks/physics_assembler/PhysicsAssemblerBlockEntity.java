@@ -1,5 +1,7 @@
 package dev.simulated_team.simulated.content.blocks.physics_assembler;
 
+import dev.simulated_team.simulated.index.SimBlocks;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.ContraptionCollider;
 import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
@@ -57,8 +59,8 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
     private long lastProcessedGameTime = Long.MIN_VALUE;
     private UUID lastProcessedPlayer;
 
-    public PhysicsAssemblerBlockEntity(final BlockPos pos, final BlockState state) {
-        super(SimulatedFabricContent.PHYSICS_ASSEMBLER_BLOCK_ENTITY, pos, state);
+    public PhysicsAssemblerBlockEntity(final BlockEntityType<?> type, final BlockPos pos, final BlockState state) {
+        super(type, pos, state);
     }
 
     public boolean tryBeginInteraction(final long gameTime, final UUID playerId) {
@@ -84,7 +86,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         if (level == null || level.isClientSide) {
             return OperationResult.failure("server level unavailable");
         }
-        if (!getBlockState().is(SimulatedFabricContent.PHYSICS_ASSEMBLER)) {
+        if (!getBlockState().is(SimBlocks.PHYSICS_ASSEMBLER.get())) {
             return OperationResult.failure("assembly can only begin from a world Physics Assembler");
         }
 
@@ -121,7 +123,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         // and the Create entity has initialized every MovementContext.
         contraption.removeBlocksFromWorld(level, BlockPos.ZERO);
 
-        if (!level.setBlock(worldPosition, SimulatedFabricContent.PHYSICS_ASSEMBLER_ANCHOR.defaultBlockState(), 3)) {
+        if (!level.setBlock(worldPosition, SimBlocks.PHYSICS_ASSEMBLER_ANCHOR.get().defaultBlockState(), 3)) {
             entity.disassemble();
             restoreAssemblerIfMissing(level, worldPosition, contraption);
             return OperationResult.failure("could not create the temporary controller anchor; structure was restored");
@@ -169,7 +171,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
             return OperationResult.failure("no live assembly is attached");
         }
 
-        if (getBlockState().is(SimulatedFabricContent.PHYSICS_ASSEMBLER_ANCHOR)) {
+        if (getBlockState().is(SimBlocks.PHYSICS_ASSEMBLER_ANCHOR.get())) {
             return disassembleAnchoredTransport(active);
         }
 
@@ -213,7 +215,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
             // If Create fails before completing disassembly, recreate the anchor
             // so the still-live contraption remains controllable instead of
             // becoming an orphan that can corrupt the next world save.
-            level.setBlock(anchorPos, SimulatedFabricContent.PHYSICS_ASSEMBLER_ANCHOR.defaultBlockState(), 3);
+            level.setBlock(anchorPos, SimBlocks.PHYSICS_ASSEMBLER_ANCHOR.get().defaultBlockState(), 3);
             if (level.getBlockEntity(anchorPos) instanceof final PhysicsAssemblerBlockEntity restoredAnchor
                     && active.isAlive()) {
                 restoredAnchor.activeBlockCount = placedBlocks;
@@ -280,7 +282,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
         final BlockPos assemblerTarget = movedAssemblerTarget(active, controllerPos);
 
         active.setContraptionMotion(Vec3.ZERO);
-        if (world.getBlockState(controllerPos).is(SimulatedFabricContent.PHYSICS_ASSEMBLER_ANCHOR)) {
+        if (world.getBlockState(controllerPos).is(SimBlocks.PHYSICS_ASSEMBLER_ANCHOR.get())) {
             world.removeBlock(controllerPos, false);
         }
 
@@ -305,7 +307,7 @@ public final class PhysicsAssemblerBlockEntity extends BlockEntity implements IC
     private static boolean restoreAssemblerIfMissing(final Level world,
                                                      final BlockPos target,
                                                      final PhysicsAssemblyContraption physicsAssembly) {
-        if (world.getBlockState(target).is(SimulatedFabricContent.PHYSICS_ASSEMBLER)) {
+        if (world.getBlockState(target).is(SimBlocks.PHYSICS_ASSEMBLER.get())) {
             return true;
         }
         if (!world.isEmptyBlock(target)) {

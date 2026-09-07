@@ -1,5 +1,7 @@
 package dev.simulated_team.simulated.fabric;
 
+import dev.simulated_team.simulated.index.SimItems;
+import dev.simulated_team.simulated.index.SimBlocks;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
@@ -113,8 +115,8 @@ public final class SimulatedFabric implements ModInitializer {
                 .then(Commands.literal("give_core_items")
                         .requires(source -> source.hasPermission(2))
                         .executes(context -> {
-                            give(context.getSource(), new ItemStack(SimulatedFabricContent.GYROSCOPIC_MECHANISM));
-                            give(context.getSource(), new ItemStack(SimulatedFabricContent.ENGINE_ASSEMBLY));
+                            give(context.getSource(), new ItemStack(SimItems.GYRO_MECHANISM.get()));
+                            give(context.getSource(), new ItemStack(SimItems.ENGINE_ASSEMBLY.get()));
                             context.getSource().sendSuccess(() -> Component.literal(
                                     "Gave ported Simulated core items"), false);
                             return 1;
@@ -122,7 +124,7 @@ public final class SimulatedFabric implements ModInitializer {
                 .then(Commands.literal("give_physics_assembler")
                         .requires(source -> source.hasPermission(2))
                         .executes(context -> {
-                            give(context.getSource(), new ItemStack(SimulatedFabricContent.PHYSICS_ASSEMBLER));
+                            give(context.getSource(), new ItemStack(SimBlocks.PHYSICS_ASSEMBLER.get()));
                             context.getSource().sendSuccess(() -> Component.literal(
                                     "Gave Physics Assembler"), false);
                             return 1;
@@ -130,7 +132,7 @@ public final class SimulatedFabric implements ModInitializer {
                 .then(Commands.literal("give_steering_wheel")
                         .requires(source -> source.hasPermission(2))
                         .executes(context -> {
-                            give(context.getSource(), new ItemStack(SimulatedFabricContent.STEERING_WHEEL));
+                            give(context.getSource(), new ItemStack(SimBlocks.STEERING_WHEEL.get()));
                             context.getSource().sendSuccess(() -> Component.literal(
                                     "Gave Steering Wheel"), false);
                             return 1;
@@ -154,7 +156,7 @@ public final class SimulatedFabric implements ModInitializer {
         }
 
         final BlockPos pos = ((BlockHitResult) hit).getBlockPos();
-        return source.getLevel().getBlockState(pos).is(SimulatedFabricContent.PHYSICS_ASSEMBLER)
+        return source.getLevel().getBlockState(pos).is(SimBlocks.PHYSICS_ASSEMBLER.get())
                 ? pos
                 : null;
     }

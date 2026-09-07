@@ -2,6 +2,10 @@ package dev.simulated_team.simulated.fabric;
 
 import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblyContraption;
+import dev.simulated_team.simulated.index.SimPartialModels;
+import dev.simulated_team.simulated.index.SimResourceManagers;
+import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
+import net.minecraft.server.packs.PackType;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -20,6 +24,16 @@ public final class SimulatedFabricClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        // Model parts are client-only: PartialModel lives in Flywheel's baked
+        // model package, which a dedicated server cannot load. Touched here, not
+        // from the common init.
+        SimPartialModels.init();
+
+        // Creative-tab sections are assets, so the listener belongs on the
+        // client resource reload rather than the server data reload.
+        ResourceManagerHelper.get(PackType.CLIENT_RESOURCES)
+                .registerReloadListener(SimResourceManagers.SIMULATED_SECTION);
+
         ClientPlayNetworking.registerGlobalReceiver(
                 SimulatedFabricNetworking.CONTRAPTION_POSITION,
                 (client, handler, buffer, responseSender) -> {

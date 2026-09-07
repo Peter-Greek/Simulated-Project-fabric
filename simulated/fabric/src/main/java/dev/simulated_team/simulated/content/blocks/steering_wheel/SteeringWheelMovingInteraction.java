@@ -6,9 +6,12 @@ import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
 import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblyContraption;
 import dev.simulated_team.simulated.fabric.SimulatedFabricNetworking;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
 /** Starts temporary vehicle control from a steering wheel on a moving assembly. */
 public final class SteeringWheelMovingInteraction extends MovingInteractionBehaviour {
@@ -30,10 +33,23 @@ public final class SteeringWheelMovingInteraction extends MovingInteractionBehav
             return true;
         }
 
+        // The craft drives the way this wheel points. The contraption keeps the
+        // blocks in their assembled orientation, so the wheel's own FACING is
+        // already the local heading the helm needs.
+        final StructureTemplate.StructureBlockInfo wheel = controlled.getContraption().getBlocks().get(localPos);
+        if (wheel == null) {
+            return true;
+        }
+        final BlockState wheelState = wheel.state();
+        if (!(wheelState.getBlock() instanceof SteeringWheelBlock)) {
+            return true;
+        }
+        final Direction forward = SteeringWheelBlock.helmForward(wheelState);
+
         if (player instanceof final ServerPlayer serverPlayer) {
             // Sit one block above the moving wheel. The seat is logical only and
             // is inserted into Create's contraption seat list on demand.
-            SimulatedFabricNetworking.beginFlightControl(serverPlayer, controlled, localPos.above());
+            SimulatedFabricNetworking.beginFlightControl(serverPlayer, controlled, localPos.above(), forward);
         }
         return true;
     }

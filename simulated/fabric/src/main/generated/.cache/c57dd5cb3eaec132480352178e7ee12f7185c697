@@ -1,0 +1,21 @@
+// 1.20.1	2026-09-06T20:09:12.2999968	Create: Simulated (Fabric Port)/Registrate Provider for simulated [Recipes, Advancements, Loot Tables, Tags (blocks), Tags (items), Tags (fluids), Tags (entity_types), Blockstates, Item models, Lang (en_us/en_ud)]
+4da4a4eba285ef2d0fc2db0eb4e67079f91477c3 data\simulated\loot_tables\blocks\steering_wheel.json
+623d2594e69152b1c3d2d8fc94ac631e5e6d2770 assets\simulated\models\item\steering_wheel.json
+fdbb7e8fecc40202a6bcb6d938c8385da40d3907 data\simulated\recipes\steering_wheel.json
+6037a89c11861f4d10ddcca69873a3fabbd7033b assets\simulated\models\item\engine_assembly.json
+a52e365536c4fe86860fc34b6878d7009437456c assets\simulated\lang\en_us.json
+75b6d9eb92cd52de4a76c178f9d03d89c390efea data\create\tags\blocks\safe_nbt.json
+078eb8e5e8391571bc825dbabe53afdf5bbbf5de assets\simulated\models\item\incomplete_engine_assembly.json
+0fc1d785a420f4f27e514f169b98449841e0cc25 assets\simulated\lang\en_ud.json
+d20d2e4a5900c5c09907ac2a2942aa37744e68f2 data\minecraft\tags\blocks\mineable\pickaxe.json
+e841ec914fa38ca27479dbd8d789205107bc8b87 data\simulated\loot_tables\blocks\physics_assembler.json
+07e2d7f8444afa86b9d23b1e2bcd3d276b660948 assets\simulated\models\item\incomplete_gyroscopic_mechanism.json
+c0411b74bd2abbbf21fbee0ddb5bcc71ed4969a6 assets\simulated\blockstates\steering_wheel.json
+e3b2a553d35783aa67a8ee7724907dd9b931ff9b data\simulated\advancements\recipes\misc\physics_assembler.json
+3dff9e1ec59415779195d2abfa9f07bc17b428a1 assets\simulated\blockstates\physics_assembler_anchor.json
+de09e3e79244ea953d27316a2063c8f4edebe892 assets\simulated\models\item\physics_assembler.json
+89e26d3c70dbcbd12cdbe702c51e9ed0694b21de assets\simulated\models\item\gyroscopic_mechanism.json
+f4fed85cf3b78a0f3af68b62134632491fa0321f data\simulated\advancements\recipes\misc\steering_wheel.json
+d20d2e4a5900c5c09907ac2a2942aa37744e68f2 data\minecraft\tags\blocks\mineable\axe.json
+73de0438a18d124efcc6f7d70eb867bb4ffeaeb2 data\simulated\recipes\physics_assembler.json
+6e0a65cd2113c76c853b24dc31358cd0a321f36d assets\simulated\blockstates\physics_assembler.json

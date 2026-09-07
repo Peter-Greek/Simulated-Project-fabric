@@ -1,5 +1,6 @@
 package dev.simulated_team.simulated.content.blocks.physics_assembler;
 
+import dev.simulated_team.simulated.index.SimBlockEntityTypes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Block;
@@ -27,7 +28,7 @@ public final class PhysicsAssemblerAnchorBlock extends Block implements EntityBl
 
     @Override
     public BlockEntity newBlockEntity(final BlockPos pos, final BlockState state) {
-        return new PhysicsAssemblerBlockEntity(pos, state);
+        return SimBlockEntityTypes.PHYSICS_ASSEMBLER.create(pos, state);
     }
 
     @Override

@@ -1,0 +1,11 @@
+{
+  "block.simulated.physics_assembler": "ɹǝןqɯǝssⱯ sɔısʎɥԀ",
+  "block.simulated.physics_assembler_anchor": "ɹoɥɔuⱯ ɹǝןqɯǝssⱯ sɔısʎɥԀ",
+  "block.simulated.steering_wheel": "ןǝǝɥM buıɹǝǝʇS",
+  "item.simulated.engine_assembly": "ʎןqɯǝssⱯ ǝuıbuƎ",
+  "item.simulated.gyroscopic_mechanism": "ɯsıuɐɥɔǝW ɔıdoɔsoɹʎ⅁",
+  "item.simulated.incomplete_engine_assembly": "ʎןqɯǝssⱯ ǝuıbuƎ ǝʇǝןdɯoɔuI",
+  "item.simulated.incomplete_gyroscopic_mechanism": "ɯsıuɐɥɔǝW ɔıdoɔsoɹʎ⅁ ǝʇǝןdɯoɔuI",
+  "itemGroup.simulated.group": "pǝʇɐןnɯıS ǝʇɐǝɹƆ",
+  "simulated.simulated_section.simulated": "pǝʇɐןnɯıS"
+}

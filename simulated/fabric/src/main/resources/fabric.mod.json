@@ -14,6 +14,9 @@
     ],
     "client": [
       "dev.simulated_team.simulated.fabric.SimulatedFabricClient"
+    ],
+    "fabric-datagen": [
+      "dev.simulated_team.simulated.data.SimulatedDataGenerator"
     ]
   },
   "depends": {

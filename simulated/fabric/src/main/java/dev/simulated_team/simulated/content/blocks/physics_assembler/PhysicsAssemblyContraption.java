@@ -1,5 +1,6 @@
 package dev.simulated_team.simulated.content.blocks.physics_assembler;
 
+import dev.simulated_team.simulated.index.SimBlocks;
 import com.simibubi.create.api.contraption.ContraptionType;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.AssemblyException;
@@ -50,7 +51,7 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         }
 
         final BlockState assemblerState = world.getBlockState(controllerPos);
-        if (!assemblerState.is(SimulatedFabricContent.PHYSICS_ASSEMBLER)) {
+        if (!assemblerState.is(SimBlocks.PHYSICS_ASSEMBLER.get())) {
             return false;
         }
         assemblerFacingId = assemblerState.getValue(PhysicsAssemblerBlock.FACING).get3DDataValue();
@@ -68,7 +69,7 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
 
                 // Register logical steering-wheel rider points before the Create
                 // entity is spawned so clients receive the same seat table.
-                if (state.is(SimulatedFabricContent.STEERING_WHEEL)) {
+                if (state.is(SimBlocks.STEERING_WHEEL.get())) {
                     ensureHelmSeat(pos.subtract(controllerPos).above());
                 }
             }
@@ -142,6 +143,14 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
      * This lets moving control blocks choose their own rider position without
      * replacing any real Create seats already captured by the contraption.
      */
+    /**
+     * The direction the assembler faces, in the contraption's local space. Used
+     * as the heading when the assembler itself is the helm.
+     */
+    public Direction assemblerFacing() {
+        return Direction.from3DDataValue(assemblerFacingId);
+    }
+
     public int ensureHelmSeat(final BlockPos localSeat) {
         final BlockPos seat = localSeat.immutable();
         int index = seats.indexOf(seat);
@@ -156,7 +165,7 @@ public final class PhysicsAssemblyContraption extends TranslatingContraption {
         final Direction facing = Direction.from3DDataValue(assemblerFacingId);
         final AttachFace[] faces = AttachFace.values();
         final AttachFace face = faces[Math.floorMod(assemblerFaceOrdinal, faces.length)];
-        return SimulatedFabricContent.PHYSICS_ASSEMBLER.defaultBlockState()
+        return SimBlocks.PHYSICS_ASSEMBLER.get().defaultBlockState()
                 .setValue(PhysicsAssemblerBlock.FACING, facing.getAxis().isHorizontal() ? facing : Direction.NORTH)
                 .setValue(PhysicsAssemblerBlock.FACE, face);
     }

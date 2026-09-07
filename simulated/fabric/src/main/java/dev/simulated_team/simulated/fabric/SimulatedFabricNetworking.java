@@ -126,14 +126,25 @@ public final class SimulatedFabricNetworking {
 
     /** Fallback helm entry point used by the moving Physics Assembler itself. */
     public static void beginFlightControl(final ServerPlayer player,
-                                          final ControlledContraptionEntity target) {
-        beginFlightControl(player, target, PhysicsAssemblyContraption.HELM_SEAT);
+                                          final ControlledContraptionEntity target,
+                                          final Direction forward) {
+        beginFlightControl(player, target, PhysicsAssemblyContraption.HELM_SEAT, forward);
     }
 
-    /** Starts vehicle control from a specific logical rider point on the moving craft. */
+    /**
+     * Starts vehicle control from a specific logical rider point on the moving
+     * craft.
+     *
+     * <p>{@code forward} is the direction the control block faces in the
+     * contraption's own local space — the way the craft drives when the pilot
+     * holds W. It is local, not world: the contraption's current rotation is
+     * applied to it every tick, so the craft keeps steering relative to itself
+     * after it has turned.
+     */
     public static void beginFlightControl(final ServerPlayer player,
                                           final ControlledContraptionEntity target,
-                                          final BlockPos localSeat) {
+                                          final BlockPos localSeat,
+                                          final Direction forward) {
         if (!target.isAlive() || !(target.getContraption() instanceof final PhysicsAssemblyContraption physicsAssembly)) {
             sendFlightControlState(player, false, "Physics Assembler helm is unavailable");
             return;
@@ -164,7 +175,7 @@ public final class SimulatedFabricNetworking {
             target.addSittingPassenger(player, helmSeat);
         }
 
-        FLIGHT_SESSIONS.put(playerId, new FlightSession(target.getUUID()));
+        FLIGHT_SESSIONS.put(playerId, new FlightSession(target.getUUID(), forward));
         syncContraptionPosition(target);
         sendFlightControlState(player, true,
                 "Vehicle helm engaged: W/S thrust, A/D yaw, Space ascend, Ctrl descend, Shift dismount");
@@ -236,13 +247,16 @@ public final class SimulatedFabricNetworking {
             session.yawVelocity = 0.0D;
         }
 
-        if (session.yawVelocity != 0.0D && !rotateWithCollision(active, session.yawVelocity)) {
+        // Negated: Create rotates a contraption anticlockwise for a rising
+        // angle (VecHelper.rotate takes local +Z toward +X), so turning right
+        // means decreasing the angle.
+        if (session.yawVelocity != 0.0D && !rotateWithCollision(active, -session.yawVelocity)) {
             session.yawVelocity = 0.0D;
             notifyCollision(player, session, "Physics Assembler yaw blocked by world collision");
         }
 
         final int translationInput = inputMask & TRANSLATION_MASK;
-        final Vec3 desiredDirection = desiredDirection(translationInput, active.getAngle(1.0F));
+        final Vec3 desiredDirection = desiredDirection(translationInput, active, session.localForward);
         final Vec3 desiredVelocity = desiredDirection.scale(MAX_FLIGHT_SPEED);
         final double response = translationInput == 0 ? BRAKING : ACCELERATION;
         session.velocity = session.velocity.add(desiredVelocity.subtract(session.velocity).scale(response));
@@ -267,9 +281,18 @@ public final class SimulatedFabricNetworking {
         }
     }
 
-    private static Vec3 desiredDirection(final int inputMask, final float craftYawDegrees) {
-        final double yaw = Math.toRadians(craftYawDegrees);
-        final Vec3 forward = new Vec3(-Math.sin(yaw), 0.0D, Math.cos(yaw));
+    /**
+     * The craft drives the way its control block points, not the way world north
+     * happens to lie. The local forward vector is put through the contraption's
+     * own {@code applyRotation}, so the heading tracks the craft as it yaws and
+     * matches exactly what Create renders and collides.
+     */
+    private static Vec3 desiredDirection(final int inputMask,
+                                         final ControlledContraptionEntity active,
+                                         final Direction localForward) {
+        final Vec3 rotated = active.applyRotation(Vec3.atLowerCornerOf(localForward.getNormal()), 1.0F);
+        final Vec3 flattened = new Vec3(rotated.x, 0.0D, rotated.z);
+        final Vec3 forward = flattened.lengthSqr() < 1.0E-6D ? Vec3.ZERO : flattened.normalize();
         Vec3 desired = Vec3.ZERO;
 
         if ((inputMask & FLIGHT_FORWARD) != 0) {
@@ -384,14 +407,17 @@ public final class SimulatedFabricNetworking {
 
     private static final class FlightSession {
         private final UUID contraptionId;
+        /** Direction the control block faces in contraption-local space. */
+        private final Direction localForward;
         private Vec3 velocity = Vec3.ZERO;
         private double yawVelocity;
         /** Latest intent from the pilot's client; applied on every server tick. */
         private int inputMask;
         private boolean collisionNotified;
 
-        private FlightSession(final UUID contraptionId) {
+        private FlightSession(final UUID contraptionId, final Direction localForward) {
             this.contraptionId = contraptionId;
+            this.localForward = localForward;
         }
     }
 }
