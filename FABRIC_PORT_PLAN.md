@@ -398,6 +398,32 @@ class it targets; it cannot prove the injected logic is *right*, as the
 `turnPlayer` ordinals above show. Nothing in V1 below has been played. The
 sections that follow stay open until someone has.
 
+**Notes log — Homestead `.19`, a crash from holding the Physics Staff.**
+
+Holding the Creative Physics Staff crashed the client on the first rendered frame:
+
+```
+NullPointerException: Cannot invoke "java.util.List.iterator()" because "locks" is null
+  PhysicsStaffRenderHandler.renderAllLocks:129
+```
+
+Not a shader problem, and the code is byte-identical to upstream:
+`getLocks` returns `this.locks.get(level.dimension())`, and both callers
+dereference it without a check. Upstream never sees null because the server's
+lock-list packet always arrives and creates the entry. Nothing sends that packet
+here until Sable lands, so the entry is simply absent.
+
+This is the shape of defect the inert facade produces: **upstream code that is
+correct on upstream's stack, because a collection it assumes is populated never
+gets populated here.** `getLocks` now returns an empty list, which keeps
+upstream's meaning -- no locks -- rather than a special case.
+
+The rest of that class was checked rather than assumed. Every other
+`map.get(dimension)` on a Sable-fed collection is already guarded:
+`serverDragSessions` behind a null check, `EndSeaPhysicsData.of` declared
+`@Nullable` with checking callers, and both `DiagramEntity` sites. `getLocks` was
+the only one that dereferenced.
+
 **Notes log — first flight attempt, `2026-09-07`.**
 
 Gluing the test airframe's deck and legs assembled the legs but left them behind:

@@ -48,6 +48,7 @@ import org.joml.*;
 import org.lwjgl.glfw.GLFW;
 
 import java.lang.Math;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -206,8 +207,7 @@ public class PhysicsStaffClientHandler {
     }
 
     private boolean isLocked(final SubLevel subLevel) {
-        final List<UUID> locks = this.locks.get(subLevel.getLevel().dimension());
-        return locks.contains(subLevel.getUniqueId());
+        return this.getLocks(subLevel.getLevel()).contains(subLevel.getUniqueId());
     }
 
     public void tick() {
@@ -407,8 +407,18 @@ public class PhysicsStaffClientHandler {
         this.locks.put(dimension, locks);
     }
 
+    /**
+     * The locks known for a dimension, empty when none are.
+     *
+     * <p>Upstream returns the map entry directly, and never sees null because the
+     * server's lock list always arrives and creates it. Nothing sends that packet
+     * on this stack until Sable lands, so the entry is simply absent, and every
+     * caller here dereferences the result -- the render handler crashed the client
+     * on the first frame the Physics Staff was held. Returning an empty list keeps
+     * upstream's meaning: no locks.
+     */
     protected List<UUID> getLocks(final Level level) {
-        return this.locks.get(level.dimension());
+        return this.locks.getOrDefault(level.dimension(), Collections.emptyList());
     }
 
     public ClientDragSession getDragSession() {
