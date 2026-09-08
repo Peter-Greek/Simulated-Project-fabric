@@ -1,0 +1,7 @@
+{
+  "replace": false,
+  "values": [
+    "simulated:redstone_accumulator",
+    "simulated:redstone_inductor"
+  ]
+}

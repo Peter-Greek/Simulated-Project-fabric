@@ -1,0 +1,30 @@
+{
+  "parent": "simulated:what_goes_down",
+  "criteria": {
+    "0": {
+      "trigger": "simulated:rewind_time_builtin"
+    }
+  },
+  "display": {
+    "announce_to_chat": false,
+    "description": {
+      "color": "#FFDBA213",
+      "translate": "advancement.simulated.rewind_time.desc"
+    },
+    "frame": "task",
+    "hidden": false,
+    "icon": {
+      "item": "minecraft:air"
+    },
+    "show_toast": true,
+    "title": {
+      "translate": "advancement.simulated.rewind_time"
+    }
+  },
+  "requirements": [
+    [
+      "0"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

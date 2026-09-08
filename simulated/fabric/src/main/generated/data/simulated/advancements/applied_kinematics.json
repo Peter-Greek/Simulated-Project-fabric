@@ -1,0 +1,39 @@
+{
+  "parent": "simulated:root",
+  "criteria": {
+    "0": {
+      "conditions": {
+        "items": [
+          {
+            "items": [
+              "minecraft:air"
+            ]
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    }
+  },
+  "display": {
+    "announce_to_chat": true,
+    "description": {
+      "color": "#FFDBA213",
+      "translate": "advancement.simulated.applied_kinematics.desc"
+    },
+    "frame": "task",
+    "hidden": false,
+    "icon": {
+      "item": "minecraft:air"
+    },
+    "show_toast": true,
+    "title": {
+      "translate": "advancement.simulated.applied_kinematics"
+    }
+  },
+  "requirements": [
+    [
+      "0"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

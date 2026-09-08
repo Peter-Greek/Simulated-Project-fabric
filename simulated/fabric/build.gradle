@@ -1,0 +1,126 @@
+plugins {
+    id 'fabric-loom'
+}
+
+base {
+    archivesName = 'simulated-fabric'
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.fabricmc.net/' }
+    maven { url = 'https://mvn.devos.one/snapshots' }
+    maven { url = 'https://mvn.devos.one/releases' }
+    maven { url = 'https://maven.createmod.net' }
+    maven { url = 'https://raw.githubusercontent.com/Fuzss/modresources/main/maven' }
+    maven { url = 'https://maven.jamieswhiteshirt.com/libs-release' }
+    maven { url = 'https://maven.blamejared.com' }
+    maven { url = 'https://maven.tterrag.com/' }
+    maven { url = 'https://maven.squiddev.cc' }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${minecraft_version}"
+    mappings loom.officialMojangMappings()
+
+    modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
+    modImplementation "com.simibubi.create:create-fabric:${create_fabric_version}"
+
+    // Nested inside the Create build Homestead ships, so it is present at
+    // runtime without us bundling it. Declared explicitly because we compile
+    // against it directly rather than only through Create's own API.
+    modCompileOnly "com.tterrag.registrate_fabric:Registrate:${registrate_version}"
+
+    // Soft integrations. JEI is in the Homestead pack; ComputerCraft is not, and
+    // both are compiled against but never required at runtime — the integration
+    // classes are only reached when the mod is loaded.
+    modCompileOnly "mezz.jei:jei-${minecraft_version}-fabric-api:${jei_version}"
+    modCompileOnly "cc.tweaked:cc-tweaked-${minecraft_version}-fabric-api:${cc_tweaked_version}"
+}
+
+loom {
+    // Upstream's widener, copied unchanged: it is already in Fabric's own
+    // format, and the members it opens are the ones the port needs too.
+    accessWidenerPath = file('src/main/resources/simulated.accesswidener')
+
+    runs {
+        client {
+            client()
+            name = 'Homestead Fabric Client'
+        }
+        server {
+            server()
+            name = 'Homestead Fabric Server'
+        }
+        // Hand-rolled rather than fabricApi.configureDataGeneration(): that
+        // helper only builds a dedicated-server run on Loom 1.8, and blockstate
+        // and model generation touches client-only classes.
+        datagen {
+            client()
+            name = 'Data Generation'
+            runDir 'build/datagen'
+            vmArg '-Dfabric-api.datagen'
+            vmArg "-Dfabric-api.datagen.output-dir=${file('src/main/generated')}"
+            vmArg '-Dfabric-api.datagen.modid=simulated'
+            vmArg '-Dfabric-api.datagen.strict-validation=false'
+        }
+    }
+}
+
+// Registrate describes blockstates, models, lang, loot and recipes in the same
+// place the content is registered. Generating them keeps the resource tree in
+// step with the Java as the port grows, instead of hand-writing a JSON file per
+// block per dye colour.
+sourceSets.main.resources.srcDir 'src/main/generated'
+
+processResources {
+    inputs.property 'version', project.version
+
+    // The generated tree is listed after the upstream one, so where both
+    // describe the same file the generated version is the one that ships.
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+
+    // Datagen's hash cache lives beside its output; it is a build artefact.
+    exclude '.cache/**'
+
+    filesMatching('fabric.mod.json') {
+        expand version: project.version
+    }
+
+    // Every hand-authored asset comes from the upstream tree. What Registrate
+    // can describe — blockstates, most models, loot tables, tags, recipes,
+    // lang — is generated into src/main/generated instead, and wins where both
+    // exist, because the generated tree is listed after this one.
+    //
+    // Two exclusions, both recorded in FABRIC_PORT_PLAN.md:
+    //   pinwheel/  is Veil's shader tree, and this port replaces Veil.
+    //   data/sable/ tags a mod that is not on this stack until V2.
+    from('../common/src/main/resources') {
+        include 'assets/**'
+        include 'data/**'
+        include 'datagen/**'
+        exclude 'assets/simulated/pinwheel/**'
+        exclude 'data/sable/**'
+
+        // Upstream's OBJ models declare NeoForge's loader. Porting Lib supplies
+        // the same loader here under its own id, and reads the flip flag as
+        // camelCase. Rewriting on copy keeps the upstream files untouched.
+        filesMatching('assets/simulated/models/**/*.json') {
+            filter { line ->
+                line.replace('"neoforge:obj"', '"porting_lib:obj"')
+                    .replace('"forge:obj"', '"porting_lib:obj"')
+                    .replace('"flip_v"', '"flipV"')
+            }
+        }
+    }
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(Integer.parseInt(java_version))
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = Integer.parseInt(java_version)
+}

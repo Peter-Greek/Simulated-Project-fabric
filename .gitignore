@@ -118,3 +118,10 @@ runs/
 
 # Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
 !gradle-wrapper.jar
+
+# Python bytecode, from the sable-backport tooling
+__pycache__/
+*.pyc
+
+# Generated test-bench datapack; rebuild with tools/testworld/make_datapack.py
+/build/testworld/

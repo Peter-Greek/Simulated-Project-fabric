@@ -1,0 +1,30 @@
+{
+  "parent": "simulated:no_pressure",
+  "criteria": {
+    "0": {
+      "trigger": "simulated:can_we_get_much_higher_builtin"
+    }
+  },
+  "display": {
+    "announce_to_chat": true,
+    "description": {
+      "color": "#FFDBA213",
+      "translate": "advancement.simulated.can_we_get_much_higher.desc"
+    },
+    "frame": "goal",
+    "hidden": true,
+    "icon": {
+      "item": "minecraft:air"
+    },
+    "show_toast": true,
+    "title": {
+      "translate": "advancement.simulated.can_we_get_much_higher"
+    }
+  },
+  "requirements": [
+    [
+      "0"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

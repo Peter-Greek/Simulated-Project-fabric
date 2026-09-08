@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": {
+      "tag": "c:amethyst"
+    },
+    "B": {
+      "item": "create:brass_casing"
+    },
+    "C": {
+      "item": "create:electron_tube"
+    }
+  },
+  "pattern": [
+    " A ",
+    " C ",
+    " B "
+  ],
+  "result": {
+    "item": "simulated:optical_sensor"
+  },
+  "show_notification": true
+}

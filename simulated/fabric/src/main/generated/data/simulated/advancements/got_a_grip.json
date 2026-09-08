@@ -1,0 +1,30 @@
+{
+  "parent": "simulated:get_a_grip",
+  "criteria": {
+    "0": {
+      "trigger": "simulated:got_a_grip_builtin"
+    }
+  },
+  "display": {
+    "announce_to_chat": true,
+    "description": {
+      "color": "#FFDBA213",
+      "translate": "advancement.simulated.got_a_grip.desc"
+    },
+    "frame": "goal",
+    "hidden": true,
+    "icon": {
+      "item": "minecraft:air"
+    },
+    "show_toast": true,
+    "title": {
+      "translate": "advancement.simulated.got_a_grip"
+    }
+  },
+  "requirements": [
+    [
+      "0"
+    ]
+  ],
+  "sends_telemetry_event": true
+}

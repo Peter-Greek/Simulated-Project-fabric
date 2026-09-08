@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import sys
+
+if len(sys.argv) != 2:
+    raise SystemExit("usage: prepare_companion.py <sable-companion checkout>")
+
+root = Path(sys.argv[1]).resolve()
+versions = root / "libs.versions.toml"
+text = versions.read_text(encoding="utf-8")
+replacements = {
+    'java-version = "21"': 'java-version = "17"',
+    'minecraft = "1.21.1"': 'minecraft = "1.20.1"',
+    'loom = "1.16.+"': 'loom = "1.8.13"',
+    'loom = { id = "net.fabricmc.fabric-loom", version.ref = "loom" }': 'loom = { id = "fabric-loom", version.ref = "loom" }',
+    'loom-remap = { id = "net.fabricmc.fabric-loom-remap", version.ref = "loom" }': 'loom-remap = { id = "fabric-loom", version.ref = "loom" }',
+}
+for old, new in replacements.items():
+    if old not in text:
+        raise SystemExit(f"expected version line not found: {old}")
+    text = text.replace(old, new)
+versions.write_text(text, encoding="utf-8")
+
+# Current Companion dynamically discovers subprojects with a Kotlin DSL idiom
+# that no longer type-infers cleanly after moving the build back to Gradle 8.
+# The backport only needs the common and Fabric projects, so make that explicit.
+settings = root / "settings.gradle.kts"
+settings.write_text(
+    '''pluginManagement {
+    repositories {
+        mavenCentral()
+        maven("https://maven.fabricmc.net")
+        gradlePluginPortal()
+    }
+}
+
+val modName = "sable-companion"
+rootProject.name = modName
+
+includeBuild("build-logic")
+
+include(":sable-companion-common")
+project(":sable-companion-common").projectDir = file("common")
+
+include(":sable-companion-fabric")
+project(":sable-companion-fabric").projectDir = file("fabric")
+
+dependencyResolutionManagement {
+    versionCatalogs {
+        create("libs") {
+            from(files("./libs.versions.toml"))
+        }
+    }
+}
+''',
+    encoding="utf-8",
+)
+
+# productionNamespace is a newer Loom API. Loom 1.8 already emits the remapped
+# output in the namespace expected by our 1.20.1 Fabric development build.
+common_build = root / "common" / "build.gradle.kts"
+common_text = common_build.read_text(encoding="utf-8")
+namespace_line = 'loom.productionNamespace = "named"\n\n'
+if namespace_line not in common_text:
+    raise SystemExit("expected productionNamespace setting not found")
+common_build.write_text(common_text.replace(namespace_line, ""), encoding="utf-8")
+
+# Companion currently targets Java 21 and uses SequencedCollection's getFirst().
+# Every occurrence is on a codec list whose required size has just been checked,
+# so Java 17's ordinary index access has identical semantics here.
+for java_file in (root / "common" / "src" / "main" / "java").rglob("*.java"):
+    java_text = java_file.read_text(encoding="utf-8")
+    if ".getFirst()" in java_text:
+        java_file.write_text(java_text.replace(".getFirst()", ".get(0)"), encoding="utf-8")
+
+# Loom 1.8 targets Gradle 8.10, whereas current Companion uses Gradle 9.4.
+wrapper = root / "gradle" / "wrapper" / "gradle-wrapper.properties"
+wrapper_text = wrapper.read_text(encoding="utf-8")
+old_distribution = "gradle-9.4.0-bin.zip"
+if old_distribution not in wrapper_text:
+    raise SystemExit("unexpected Sable Companion Gradle wrapper version")
+wrapper.write_text(
+    wrapper_text.replace(old_distribution, "gradle-8.10.2-bin.zip"),
+    encoding="utf-8",
+)
+
+# Give the experimental artifact a distinct version so it can never be
+# confused with RyanHCode's official release when installed/published locally.
+properties = root / "gradle.properties"
+text = properties.read_text(encoding="utf-8")
+if "version = 1.6.0" not in text:
+    raise SystemExit("unexpected Sable Companion version")
+text = text.replace("version = 1.6.0", "version = 1.6.0-fabric-1.20.1-homestead.1")
+properties.write_text(text, encoding="utf-8")
+
+print("Prepared Sable Companion for Java 17 / Minecraft 1.20.1 / Loom 1.8")

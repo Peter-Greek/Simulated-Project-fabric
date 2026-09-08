@@ -1,0 +1,7 @@
+{
+  "replace": false,
+  "values": [
+    "simulated:directional_linked_receiver",
+    "simulated:modulating_linked_receiver"
+  ]
+}
