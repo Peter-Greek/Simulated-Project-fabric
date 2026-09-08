@@ -17,6 +17,8 @@
 //   - every @Inject handler's leading parameters match the target's parameters
 //   - every @Local(ordinal) resolves to a local of that type which is actually
 //     live at the injection point
+//   - no @Local(name) addresses a vanilla local, whose name survives only in the
+//     development jar and is obfuscated in a real installation
 //
 // Usage: java -cp <asm jars> MixinAudit <mixin-classes-dir> <classpath-file>
 package tools.mixin_audit;
@@ -494,7 +496,13 @@ public final class MixinAudit {
             final Integer indexBoxed = (Integer) annValue(local, "index");
             final Object named = annValue(local, "name");
             final boolean byName = named instanceof List && !((List<?>) named).isEmpty();
-            if (byName || indexBoxed != null) continue; // addressed by name or slot, not ordinal
+
+            if (byName) {
+                checkNamedLocal(mixin, target, targetMethod, handler,
+                        String.valueOf(((List<?>) named).get(0)), handlerArgs[i], offsets);
+                continue;
+            }
+            if (indexBoxed != null) continue;                  // addressed by slot, not ordinal
             if (ordinalBoxed == null) continue;                // implicit: MixinExtras requires uniqueness, not an index
             final int ordinal = ordinalBoxed;
             final Type want = handlerArgs[i];
@@ -538,6 +546,74 @@ public final class MixinAudit {
                 }
             }
         }
+    }
+
+    /**
+     * A {@code @Local(name = ...)} matches on the target's local variable table.
+     *
+     * <p>That table is a debug attribute, and whether it carries usable names
+     * depends entirely on who compiled the target. Mod jars such as Create ship
+     * real names, so naming a local there is fine. Vanilla is the trap: Loom hands
+     * development a jar with mapped local names, so the mixin resolves and the game
+     * starts, while at runtime the obfuscated jar keeps the table and loses the
+     * names, and the same mixin dies with "Unable to find matching local". A defect
+     * of this shape cannot be found by launching the development client -- that is
+     * the one environment where it works.
+     */
+    private void checkNamedLocal(final ClassNode mixin, final ClassNode target, final MethodNode targetMethod,
+                                 final MethodNode handler, final String name, final Type want,
+                                 final List<Integer> offsets) {
+        if (target.name.startsWith("net/minecraft/")) {
+            final String suggestion = suggestOrdinal(targetMethod, name, want, offsets);
+            problem(mixin, handler.name + ": @Local(name = \"" + name + "\") targets vanilla "
+                    + shortName(target) + "." + targetMethod.name
+                    + " -- local names are obfuscated at runtime, so this resolves in development"
+                    + " and fails in a real installation. Address it positionally instead"
+                    + (suggestion == null ? "." : ": " + suggestion));
+            return;
+        }
+
+        if (targetMethod.localVariables == null) {
+            note(mixin, handler.name + ": " + shortName(target) + "." + targetMethod.name
+                    + " carries no local variable table; @Local(name) not checked");
+            return;
+        }
+        boolean found = false;
+        for (final LocalVariableNode lv : targetMethod.localVariables) {
+            if (lv.name.equals(name) && lv.desc.equals(want.getDescriptor())) { found = true; break; }
+        }
+        if (!found) {
+            problem(mixin, handler.name + ": @Local(name = \"" + name + "\") of type "
+                    + want.getClassName() + " does not name a local of that type in "
+                    + shortName(target) + "." + targetMethod.name);
+            return;
+        }
+        for (final int offset : offsets) {
+            boolean live = false;
+            for (final LocalVariableNode lv : liveLocals(targetMethod, offset, want)) {
+                if (lv.name.equals(name)) { live = true; break; }
+            }
+            if (!live) {
+                problem(mixin, handler.name + ": @Local(name = \"" + name + "\") is not in scope at the"
+                        + " injection point in " + shortName(target) + "." + targetMethod.name);
+                return;
+            }
+        }
+    }
+
+    /** The ordinal a named local would have, so the report says what to write instead. */
+    private String suggestOrdinal(final MethodNode targetMethod, final String name, final Type want,
+                                  final List<Integer> offsets) {
+        if (targetMethod.localVariables == null || offsets.isEmpty()) return null;
+        final List<LocalVariableNode> live = liveLocals(targetMethod, offsets.get(0), want);
+        for (int i = 0; i < live.size(); i++) {
+            if (live.get(i).name.equals(name)) {
+                return live.size() == 1
+                        ? "it is the only " + want.getClassName() + " in scope there, so @Local(ordinal = 0)"
+                        : "@Local(ordinal = " + i + ")";
+            }
+        }
+        return null;
     }
 
     /** Locals of {@code want} live at {@code offset}, ordered by slot, as MixinExtras orders them. */

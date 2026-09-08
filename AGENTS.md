@@ -22,6 +22,8 @@ Use Java 17 and the Gradle wrapper from the repository root. These examples use 
 - `python tools/check_resources.py` — check model, texture, sound, and translation references after building; requires dependency jars in the Gradle cache.
 - `python tools/mixin_audit/run.py` — check every mixin still matches the 1.20.1 class it targets (signatures, injection points, `@Local` ordinals). Run after touching anything under `mixin/`; a mismatch here is a crash at game start, and Mixin only reports the first one.
 
+Note that `runClient` is **not** evidence about the modpack. Loom's development jar carries mapped local variable names that the shipped obfuscated jar does not, so a `@Local(name = ...)` into a vanilla class works in development and crashes in Homestead. Address vanilla locals by ordinal; the audit enforces this.
+
 ## Coding Style & Naming Conventions
 
 Follow adjacent Java code: four-space indentation, same-line opening braces, `PascalCase` classes, `camelCase` members, and `UPPER_SNAKE_CASE` constants. Use lowercase snake_case resource IDs and feature packages. Preserve existing `Sim` registry naming. No automated formatter or linter is configured. Change generators rather than manually patching generated JSON.

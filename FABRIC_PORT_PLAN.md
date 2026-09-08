@@ -398,6 +398,45 @@ class it targets; it cannot prove the injected logic is *right*, as the
 `turnPlayer` ordinals above show. Nothing in V1 below has been played. The
 sections that follow stay open until someone has.
 
+**Notes log — Homestead `.18`, the first pack launch, and a defect class the
+development client cannot find.**
+
+`.17` crashed on launch in Homestead, at mixin apply, before any crash report was
+written. One root cause, in `torsion_spring.ComparatorBlockMixin`:
+
+```
+SugarApplicationException: Unable to find matching local!
+  @Local(name = "direction") ... in target method
+  net/minecraft/class_2286::method_9991
+```
+
+**Why the development client did not catch this, and could not have.** A
+`@Local(name = ...)` matches on the target's local variable table. Loom hands
+development a Minecraft jar carrying *mapped* local names, so `"direction"`
+resolves there and the game starts. The shipped client is Mojang's obfuscated
+jar: it still carries the table, but the names in it are obfuscated, so the same
+mixin cannot find `"direction"` and dies. Development is the one environment in
+which this bug does not reproduce — running the dev client is not evidence about
+the pack, and `.17`'s clean dev boot was worth less than it appeared.
+
+The fix is positional. `getInputSignal` has exactly one `Direction` in scope at
+the wrapped call, so `@Local(ordinal = 0)` names the same local in both
+environments. Ordinals are positional and survive obfuscation; names do not.
+
+**The audit now covers this class of defect**, and reproduces the crash without
+launching anything — it reports the offending mixin *and* computes the ordinal to
+replace the name with. It also draws the distinction that matters rather than
+banning the construct: a name-addressed local is only a defect when the target is
+a vanilla class. Mod jars are not obfuscated and ship real local names, so the
+port's other five name-addressed locals are fine. That was not assumed — each was
+checked against the Create jar **in the pack**, not the development copy:
+`context`, `level` and `target` in the display link and schematic printer mixins,
+and `impactId` in `KineticStats`, which the shipped jar carries in two scopes.
+
+The refmap was ruled out as a factor: the built jar carries 106 mapped references
+across 63 classes, and the log shows the target itself resolved correctly to
+`class_2286::method_9991`. Only the local name failed.
+
 Boxes below carry three states:
 
 | | Meaning |
