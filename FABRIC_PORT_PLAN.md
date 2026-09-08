@@ -398,9 +398,19 @@ class it targets; it cannot prove the injected logic is *right*, as the
 `turnPlayer` ordinals above show. Nothing in V1 below has been played. The
 sections that follow stay open until someone has.
 
-A box below is ticked when it has been *shown* true — by the generated output,
-by a dedicated-server boot, or by `tools/check_resources.py`. Anything whose
-truth needs a person looking at the game stays open until they have.
+Boxes below carry three states:
+
+| | Meaning |
+|---|---|
+| `[ ]` | not written, or an observation nobody has made yet |
+| `[-]` | **written, and machine-checked as far as it can be, but never played** |
+| `[x]` | *shown* true — by the generated output, by a dedicated-server boot, or by `tools/check_resources.py` / `tools/mixin_audit/run.py` |
+
+`[-]` is the state most of V1 is in as of `.17`. It means the content is
+registered, its resources resolve, its mixins match the classes they target, and
+it compiles and packages — and that nobody has yet stood in front of it in game.
+Anything whose truth needs a person looking at the game cannot go past `[-]`
+until they have.
 
 - [x] All Simulated registries live (blocks, items, block entities, entities,
       menus, particles, sounds, data serializers, stats, tags, recipe types).
@@ -423,7 +433,7 @@ truth needs a person looking at the game stays open until they have.
       inventory index is trusted without a range/ownership check. All 23
       serverbound packets have now been read individually; the four that trusted
       the client are fixed. See the `.17` note below.
-- [ ] Creative tab reproduces upstream ordering, sections, and hidden-item rules.
+- [-] Creative tab reproduces upstream ordering, sections, and hidden-item rules.
       The section grouping, ordering, row padding and the `SEARCH_ONLY` /
       `INVISIBLE` rules are line-for-line upstream's; only the per-section banner
       render is absent, and that is a V4 item for the reason recorded above.
@@ -452,84 +462,88 @@ truth needs a person looking at the game stays open until they have.
 
 ### 1.2 Redstone and logic blocks
 
-- [ ] Linked Typewriter — block, screen, key binding, frequency binding, Linked
+- [-] Linked Typewriter — block, screen, key binding, frequency binding, Linked
       Controller integration, persistence through break/place.
-- [ ] Directional Linked Receiver — directional signal scaling.
-- [ ] Modulating Linked Receiver — signal-strength scaling, configuration screen.
-- [ ] Redstone Accumulator — input delay setting.
-- [ ] Redstone Inductor — copy/invert modes.
-- [ ] Redstone Magnet.
-- [ ] Analog Transmission.
-- [ ] Directional Gearshift.
-- [ ] Throttle Lever.
+- [-] Directional Linked Receiver — directional signal scaling.
+- [-] Modulating Linked Receiver — signal-strength scaling, configuration screen.
+- [-] Redstone Accumulator — input delay setting.
+- [-] Redstone Inductor — copy/invert modes.
+- [-] Redstone Magnet.
+- [-] Analog Transmission.
+- [-] Directional Gearshift.
+- [-] Throttle Lever.
 
 ### 1.3 Sensors and instruments
 
-- [ ] Altitude Sensor (+ configuration packet).
-- [ ] Velocity Sensor.
-- [ ] Gimbal Sensor.
-- [ ] Optical Sensor.
-- [ ] Laser Pointer and Laser Sensor, including the beam.
-- [ ] Navigation Table + navigation targets, including lodestone-compass
+- [-] Altitude Sensor (+ configuration packet).
+- [-] Velocity Sensor.
+- [-] Gimbal Sensor.
+- [-] Optical Sensor.
+- [-] Laser Pointer and Laser Sensor, including the beam.
+- [-] Navigation Table + navigation targets, including lodestone-compass
       compatibility.
-- [ ] Docking Connector and Paired Docking Connector, including alignment,
+- [-] Docking Connector and Paired Docking Connector, including alignment,
       pairing, and the `a_calculated_connection` advancement.
-- [ ] All 10 display sources feed Create display links correctly.
+- [-] All 10 display sources feed Create display links correctly.
 
 ### 1.4 Kinetics and machinery
 
-- [ ] Auger Shaft and Auger Cogwheel, including auger groups.
-- [ ] Portable Engine, all 16 dye colours, including fuelling and the
+- [-] Auger Shaft and Auger Cogwheel, including auger groups.
+- [-] Portable Engine, all 16 dye colours, including fuelling and the
       `portable_engines_fed` statistic.
-- [ ] Symmetric Sail, all 16 dye colours.
-- [ ] Torsion Spring.
-- [ ] Nameplate, all 16 dye colours — naming, dye recolour, honeycomb lock.
-- [ ] Handle, iron and copper plus all 16 dye colours — grab, sneak-grab, scroll
+- [-] Symmetric Sail, all 16 dye colours.
+- [-] Torsion Spring.
+- [-] Nameplate, all 16 dye colours — naming, dye recolour, honeycomb lock.
+- [-] Handle, iron and copper plus all 16 dye colours — grab, sneak-grab, scroll
       distance. (Contraption-relative grabbing may stay inert until V3.)
-- [ ] Steering Wheel — upstream block entity, animation, analog output. Replaces
+- [-] Steering Wheel — upstream block entity, animation, analog output. Replaces
       the current shell.
-- [ ] Extra-kinetics behaviour: auto-orientation, goggle tooltips, dynamic
+- [-] Extra-kinetics behaviour: auto-orientation, goggle tooltips, dynamic
       stress, custom stress-impact tooltips.
 
 ### 1.5 Items and entities
 
-- [ ] Contraption Diagram item + entity + screen (may show placeholder physics
+- [-] Contraption Diagram item + entity + screen (may show placeholder physics
       data until V2).
-- [ ] Creative Physics Staff — registered, renders, held-item model. (Function
+- [-] Creative Physics Staff — registered, renders, held-item model. (Function
       lands in V3.)
-- [ ] Plunger Launcher + Launched Plunger entity, including backtank air
+- [-] Plunger Launcher + Launched Plunger entity, including backtank air
       pressure.
-- [ ] Honey Glue item + entity + bounds sync.
-- [ ] Merging Glue block + item.
-- [ ] Spring item + block.
-- [ ] Rope Coupling item.
-- [ ] Void Anchor.
+- [-] Honey Glue item + entity + bounds sync.
+- [-] Merging Glue block + item.
+- [-] Spring item + block.
+- [-] Rope Coupling item.
+- [ ] Void Anchor. `VoidAnchorBlockEntity` and `VoidAnchorRenderer` are ported,
+      but **upstream never registers a Void Anchor block either** — on `main` the
+      same two classes are orphans with no `SimBlocks` entry, no block entity type
+      and no resources. The port matches upstream exactly, so there is nothing to
+      test here until upstream finishes it. Left unchecked deliberately.
 
 ### 1.6 World and client
 
-- [ ] `Airship Ready` world preset.
-- [ ] `End Sea` world preset and biome, including rendering, fade, and shadow.
-- [ ] Particle types.
-- [ ] Keybindings registered and shown under a Simulated category, with the
+- [-] `Airship Ready` world preset.
+- [-] `End Sea` world preset and biome, including rendering, fade, and shadow.
+- [-] Particle types.
+- [-] Keybindings registered and shown under a Simulated category, with the
       current placeholder flight keys either implemented or removed from lang.
-- [ ] All 11 ponder scene groups render and play: auger shaft, docking
+- [-] All 11 ponder scene groups render and play: auger shaft, docking
       connector, honey glue, items, kinetics, physics assembler, redstone, rope,
       sensors, swivel bearing, symmetric sail. (Physics-dependent scenes may be
       staged for V3 if they cannot be made truthful yet — list which.)
-- [ ] Ponder tags and index entries.
-- [ ] JEI integration: hidden items, custom categories, the portable-engine
+- [-] Ponder tags and index entries.
+- [-] JEI integration: hidden items, custom categories, the portable-engine
       dyeing recipe view.
 - [ ] Sodium and Iris in the Homestead pack cause no rendering breakage.
 
 ### 1.7 Mod compatibility
 
-- [ ] ComputerCraft peripherals: altitude sensor, directional link, docking
+- [-] ComputerCraft peripherals: altitude sensor, directional link, docking
       connector, gimbal sensor, linked typewriter, modulating link, nameplate,
       nav table, optical sensor, swivel bearing, torsion spring, velocity
       sensor, plus wired modem support.
-- [ ] Nature's Compass and Explorer's Compass navigation targets.
-- [ ] Extendo Grip, Diving Boots, and Schematicannon compatibility fixes.
-- [ ] Every compat is soft: absent mod ⇒ no crash, no log spam.
+- [-] Nature's Compass and Explorer's Compass navigation targets.
+- [-] Extendo Grip, Diving Boots, and Schematicannon compatibility fixes.
+- [-] Every compat is soft: absent mod ⇒ no crash, no log spam.
 
 ### 1.8 Carry-over defects from the current branch
 
