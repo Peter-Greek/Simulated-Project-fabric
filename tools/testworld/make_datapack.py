@@ -150,11 +150,21 @@ class Fn:
         return self.cmd('setblock %d %d %d %s' % (x, y, z, block(bid, **props)))
 
     def sign(self, x, z, text, y=Y):
-        # A short label so each bench is identifiable in world.
-        lines = [text[i:i + 15] for i in range(0, min(len(text), 60), 15)]
-        msgs = ','.join('"\\"%s\\""' % l for l in lines[:4])
-        return self.cmd('setblock %d %d %d minecraft:oak_sign{front_text:{messages:[%s]}}'
-                        % (x, y, z, msgs if msgs else '"\\"\\""'))
+        """A label block. 1.20 signs need exactly four `messages`, each a JSON
+        text component; fewer than four renders blank. Single-quoted SNBT holds
+        the JSON so nothing has to be double-escaped."""
+        words, lines, cur = text.split(), [], ''
+        for w in words:
+            if len(cur) + len(w) + 1 > 15:
+                lines.append(cur); cur = w
+            else:
+                cur = (cur + ' ' + w).strip()
+        if cur:
+            lines.append(cur)
+        lines = (lines + ['', '', '', ''])[:4]
+        msgs = ','.join("'" + json.dumps({'text': l}) + "'" for l in lines)
+        return self.cmd('setblock %d %d %d minecraft:oak_sign[rotation=8]{front_text:{messages:[%s]}}'
+                        % (x, y, z, msgs))
 
 
 FUNCTIONS = []
@@ -289,6 +299,71 @@ def module_d():
     return fn
 
 
+
+def aircraft():
+    """A raised airframe carrying the instruments that only read while moving.
+
+    Altitude, velocity and gimbal sensors report nothing useful on the ground, so
+    they need a craft. The deck stands on legs so the Physics Assembler has clear
+    air beneath it, and the nose points east so a heading is easy to judge.
+    """
+    fn = emit(Fn('aircraft', 'Raised test airframe at x=60. Glue the deck, then',
+                 'right-click the Physics Assembler to assemble.'))
+    deck = Y + 5                      # 5 above the platform
+    x0, x1 = 52, 68                   # tail .. nose
+    z0, z1 = -4, 4
+
+    fn.say('Building test airframe at 60,%d,0 (nose points east).' % deck)
+
+    # Legs, so the deck stands clear of the platform.
+    for lx in (x0 + 1, x1 - 1):
+        for lz in (z0 + 1, z1 - 1):
+            fn.cmd('fill %d %d %d %d %d %d %s'
+                   % (lx, Y, lz, lx, deck - 1, lz, block('minecraft:oak_planks')))
+
+    # Deck.
+    fn.cmd('fill %d %d %d %d %d %d %s'
+           % (x0, deck, z0, x1, deck, z1, block('minecraft:oak_planks')))
+
+    # Wings: symmetric sails attach to blocks and to each other with no glue.
+    for wz in (z0 - 4, z0 - 3, z0 - 2, z0 - 1, z1 + 1, z1 + 2, z1 + 3, z1 + 4):
+        for wx in range(58, 63):
+            fn.cmd('setblock %d %d %d %s'
+                   % (wx, deck, wz, block('simulated:white_symmetric_sail', axis='x')))
+
+    dy = deck + 1                     # everything sits on the deck
+    # Flight controls, at the nose.
+    fn.cmd('setblock 66 %d 0 %s' % (dy, block('simulated:steering_wheel',
+                                              facing='east', on_floor='true', waterlogged='false')))
+    # The assembler's sticky face points down into the deck.
+    fn.cmd('setblock 60 %d 0 %s' % (dy, block('simulated:physics_assembler',
+                                              face='floor', facing='east')))
+    # Power.
+    fn.cmd('setblock 54 %d 0 %s' % (dy, block('simulated:white_portable_engine',
+                                              facing='east', lit='false')))
+    fn.cmd('setblock 53 %d 0 %s' % (dy, block('minecraft:barrel')))
+
+    # Instruments that only mean anything in motion.
+    fn.cmd('setblock 62 %d -2 %s' % (dy, block('simulated:altitude_sensor',
+                                               face='floor', facing='east', dial='linear')))
+    fn.cmd('setblock 63 %d -2 %s' % (dy, block('simulated:velocity_sensor', facing='east')))
+    fn.cmd('setblock 64 %d -2 %s' % (dy, block('simulated:gimbal_sensor', axis='x')))
+    for i, src in enumerate((62, 63, 64)):
+        fn.cmd('setblock %d %d -3 %s' % (src, dy, block('create:display_link')))
+        fn.cmd('setblock %d %d -4 %s' % (src, dy, block('create:nixie_tube')))
+
+    # Crew fittings.
+    fn.cmd('setblock 62 %d 2 %s' % (dy, block('simulated:white_nameplate',
+                                              facing='east', position='left')))
+    fn.cmd('setblock 64 %d 2 %s' % (dy, block('simulated:iron_handle', facing='up')))
+    fn.cmd('setblock 58 %d 2 %s' % (dy, block('simulated:torsion_spring',
+                                              facing='up', powered='false')))
+
+    fn.sign(x0 - 1, 0, 'AIRFRAME glue deck then assemble', y=dy)
+    fn.say('Glue the deck together, then right-click the Physics Assembler.')
+    fn.say('Steering wheel is at the nose. Watch the three nixie readouts.')
+    return fn
+
 def kit():
     fn = emit(Fn('kit', 'Gives one of everything this bench needs.'))
     items = [
@@ -313,7 +388,7 @@ def kit():
 def build_all():
     fn = emit(Fn('build', 'Platform + every module. Stand at 0 y 0 with render distance >= 8.'))
     fn.cmd('function simtest:platform')
-    for m in ('module_a', 'module_b', 'module_c', 'module_d'):
+    for m in ('module_a', 'module_b', 'module_c', 'module_d', 'aircraft'):
         fn.cmd('function simtest:' + m)
     fn.say('Test bench built at 0,%d,0. Run "function simtest:kit" for items.' % Y)
     return fn
@@ -322,6 +397,7 @@ def build_all():
 def clear_fn():
     fn = emit(Fn('clear', 'Removes everything this pack placed. Platform stays.'))
     fn.cmd('fill -2 %d -2 40 %d 26 minecraft:air' % (Y, Y + 30))
+    fn.cmd('fill 50 %d -10 70 %d 10 minecraft:air' % (Y, Y + 10))
     fn.say('Bench cleared. "function simtest:clear_platform" removes the cobble too.')
     fn2 = emit(Fn('clear_platform', 'Removes the cobble platform.'))
     for x0 in range(-256, 256, 128):
@@ -341,6 +417,7 @@ def help_fn():
         'simtest:module_b        kinetic spine',
         'simtest:module_c        sensors',
         'simtest:module_d        display wall',
+        'simtest:aircraft        raised airframe for flight tests',
         'simtest:kit             give test items',
         'simtest:clear           remove the bench',
     ]:
@@ -371,6 +448,8 @@ def lint(fn):
                                 % (fn.name, exc, payload[:70]))
         if line.startswith(('setblock ', 'fill ')) and line.count('[') != line.count(']'):
             PROBLEMS.append('%s: unbalanced [] in: %s' % (fn.name, line[:70]))
+        if 'oak_sign' in line and line.count('{"text"') != 4:
+            PROBLEMS.append('%s: sign needs exactly 4 messages: %s' % (fn.name, line[:70]))
         if line.count('{') != line.count('}'):
             PROBLEMS.append('%s: unbalanced {} in: %s' % (fn.name, line[:70]))
 
@@ -384,7 +463,7 @@ def main():
 
     platform('platform', 128, '256x256 cobble platform. Safe at render distance 8.')
     platform('platform_big', 256, '512x512 cobble platform. Needs render distance 16.')
-    module_a(); module_b(); module_c(); module_d()
+    module_a(); module_b(); module_c(); module_d(); aircraft()
     kit(); build_all(); clear_fn(); help_fn()
 
     for fn in FUNCTIONS:
