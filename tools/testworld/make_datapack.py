@@ -366,22 +366,29 @@ def aircraft():
 
 def kit():
     fn = emit(Fn('kit', 'Gives one of everything this bench needs.'))
-    items = [
-        'create:wrench', 'create:goggles', 'create:super_glue', 'create:redstone_link',
-        'create:display_link', 'create:nixie_tube', 'create:shaft', 'create:cogwheel',
-        'create:large_cogwheel', 'create:linked_controller', 'create:blaze_cake',
+    # Counts matter: a tool stacks to one, so asking for sixteen fills sixteen
+    # slots with sixteen wrenches. Tools come as one, materials as a stack.
+    ONE = [
+        'create:wrench', 'create:goggles', 'create:super_glue', 'create:linked_controller',
+        'simulated:honey_glue', 'simulated:plunger_launcher', 'simulated:contraption_diagram',
+        'simulated:creative_physics_staff',
+    ]
+    MANY = [
+        'create:redstone_link', 'create:display_link', 'create:nixie_tube', 'create:shaft',
+        'create:cogwheel', 'create:large_cogwheel', 'create:blaze_cake',
         'minecraft:coal', 'minecraft:redstone', 'minecraft:lever', 'minecraft:comparator',
         'minecraft:honeycomb', 'minecraft:slime_ball',
+        # No simulated:merging_glue -- that block is registered without an item and
+        # is placed with slimeballs, so /give on it would not parse.
+        'simulated:spring', 'simulated:rope_coupling', 'simulated:physics_assembler',
+        'simulated:steering_wheel', 'simulated:navigation_table', 'simulated:linked_typewriter',
     ]
-    # No simulated:merging_glue -- that block is registered without an item and is
-    # placed with slimeballs, so /give on it would not parse.
-    sim = ['simulated:honey_glue', 'simulated:spring',
-           'simulated:rope_coupling', 'simulated:plunger_launcher', 'simulated:contraption_diagram',
-           'simulated:creative_physics_staff', 'simulated:physics_assembler',
-           'simulated:steering_wheel', 'simulated:navigation_table', 'simulated:linked_typewriter']
-    for i in items + sim:
+    for i in ONE:
+        fn.cmd('give @s %s 1' % item(i))
+    for i in MANY:
         fn.cmd('give @s %s 16' % item(i))
-    fn.say('Kit given. Simulated blocks are all in the Create: Simulated creative tab.')
+    fn.say('Kit given: one of each tool, a stack of each material.')
+    fn.say('Everything else is in the Create: Simulated creative tab.')
     return fn
 
 
@@ -395,15 +402,40 @@ def build_all():
 
 
 def clear_fn():
-    fn = emit(Fn('clear', 'Removes everything this pack placed. Platform stays.'))
+    """Three levels of removal.
+
+    `clear` takes the benches, `clear_platform` takes the cobble, and
+    `clear_all` takes both -- removing only the platform leaves every bench
+    floating, which is what happened the first time.
+    """
+    fn = emit(Fn('clear', 'Removes the benches and the airframe. Platform stays.'))
+    # The sensor column reaches Y+24, so the bench box has to clear Y+30.
     fn.cmd('fill -2 %d -2 40 %d 26 minecraft:air' % (Y, Y + 30))
     fn.cmd('fill 50 %d -10 70 %d 10 minecraft:air' % (Y, Y + 10))
-    fn.say('Bench cleared. "function simtest:clear_platform" removes the cobble too.')
-    fn2 = emit(Fn('clear_platform', 'Removes the cobble platform.'))
+    fn.say('Benches cleared.')
+
+    fn2 = emit(Fn('clear_platform', 'Removes the cobble platform only.'))
     for x0 in range(-256, 256, 128):
         for z0 in range(-256, 256, 128):
             fn2.cmd('fill %d %d %d %d %d %d minecraft:air'
                     % (x0, FLOOR, z0, x0 + 127, FLOOR, z0 + 127))
+    fn2.say('Platform cleared.')
+
+    fn3 = emit(Fn('clear_all', 'Removes everything this pack builds: benches,',
+                  'airframe and platform.'))
+    fn3.cmd('function simtest:clear')
+    fn3.cmd('function simtest:clear_platform')
+    fn3.say('Everything this pack built is gone.')
+
+    # A blunt instrument for when something has drifted outside the known boxes:
+    # a 128x128 column centred on the player. One fill per layer keeps each well
+    # inside the 32768-block limit.
+    fn4 = emit(Fn('nuke', 'Clears a 128x128 column around you, y=195 to y=265.',
+                  'Use when something has ended up outside the built area.'))
+    fn4.say('Clearing 128x128 around you, y195-y265 ...')
+    for y in range(195, 266):
+        fn4.cmd('fill ~-64 %d ~-64 ~63 %d ~63 minecraft:air' % (y, y))
+    fn4.say('Done.')
     return fn
 
 
@@ -419,7 +451,10 @@ def help_fn():
         'simtest:module_d        display wall',
         'simtest:aircraft        raised airframe for flight tests',
         'simtest:kit             give test items',
-        'simtest:clear           remove the bench',
+        'simtest:clear           remove benches + airframe',
+        'simtest:clear_platform  remove the cobble',
+        'simtest:clear_all       remove everything above',
+        'simtest:nuke            clear 128x128 around you',
     ]:
         fn.cmd('tellraw @s ' + json.dumps({'text': line, 'color': 'gray'}))
     return fn
