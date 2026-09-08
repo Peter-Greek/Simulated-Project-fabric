@@ -398,6 +398,23 @@ class it targets; it cannot prove the injected logic is *right*, as the
 `turnPlayer` ordinals above show. Nothing in V1 below has been played. The
 sections that follow stay open until someone has.
 
+**Notes log — first flight attempt, `2026-09-07`.**
+
+Gluing the test airframe's deck and legs assembled the legs but left them behind:
+the deck flew, the legs did not, despite the two glue boxes touching.
+
+**Not a defect.** A glue join requires one glue entity to contain *both* blocks --
+`glue.contains(first) && glue.contains(second)` -- which is upstream's rule
+unchanged (`SimAssemblyContraption`, same expression). Two boxes that share a face
+but no block position do not connect the structures either side of them. The
+airframe was 17 blocks long, one past Create's 16-block glue box, which forced two
+boxes and put the deck and the legs in different ones. The generator now builds it
+16 long so the whole craft, legs included, fits a single box.
+
+Recorded because it is the kind of thing that reads as a scanner bug and is not
+one. If a future scan *does* drop glued blocks, the thing to check first is
+whether one entity really contains both positions.
+
 **Notes log — Homestead `.18`, the first pack launch, and a defect class the
 development client cannot find.**
 

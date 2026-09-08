@@ -310,7 +310,10 @@ def aircraft():
     fn = emit(Fn('aircraft', 'Raised test airframe at x=60. Glue the deck, then',
                  'right-click the Physics Assembler to assemble.'))
     deck = Y + 5                      # 5 above the platform
-    x0, x1 = 52, 68                   # tail .. nose
+    # 16 long, not 17: Create's super glue box reaches 16 blocks, and a join needs
+    # one glue entity containing both blocks -- two boxes that merely touch do not
+    # connect. At this size the whole airframe, legs included, fits a single box.
+    x0, x1 = 52, 67                   # tail .. nose
     z0, z1 = -4, 4
 
     fn.say('Building test airframe at 60,%d,0 (nose points east).' % deck)
@@ -333,7 +336,7 @@ def aircraft():
 
     dy = deck + 1                     # everything sits on the deck
     # Flight controls, at the nose.
-    fn.cmd('setblock 66 %d 0 %s' % (dy, block('simulated:steering_wheel',
+    fn.cmd('setblock 65 %d 0 %s' % (dy, block('simulated:steering_wheel',
                                               facing='east', on_floor='true', waterlogged='false')))
     # The assembler's sticky face points down into the deck.
     fn.cmd('setblock 60 %d 0 %s' % (dy, block('simulated:physics_assembler',
@@ -360,8 +363,8 @@ def aircraft():
                                               facing='up', powered='false')))
 
     fn.sign(x0 - 1, 0, 'AIRFRAME glue deck then assemble', y=dy)
-    fn.say('Glue the deck together, then right-click the Physics Assembler.')
-    fn.say('Steering wheel is at the nose. Watch the three nixie readouts.')
+    fn.say('One Super Glue box over the whole craft: 52,%d,-4 to 67,%d,4' % (Y, dy))
+    fn.say('Then right-click the Physics Assembler. Wheel is at the nose.')
     return fn
 
 def kit():
