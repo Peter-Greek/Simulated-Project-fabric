@@ -36,16 +36,12 @@ def load_states():
     """block id -> {property: {valid values}}; empty dict means "no properties"."""
     for f in SIM_BS.glob('*.json'):
         _states['simulated:' + f.stem] = _props(json.loads(f.read_text(encoding='utf-8')))
-    # The lang file is the authoritative list of what is registered. Item *models*
-    # are not: upstream ships only one of the sixteen symmetric sail item models,
-    # and none for merging glue, so keying off models reports registered items as
-    # missing.
-    lang = json.loads((SIM_BS.parent / 'lang/en_us.json').read_text(encoding='utf-8'))
-    for k in lang:
-        if k.startswith('item.simulated.') or k.startswith('block.simulated.'):
-            name = k.split('.', 2)[2]
-            if '.' not in name:
-                _items.add('simulated:' + name)
+    # Registrate writes one item model per BlockItem, so the generated item model
+    # tree is exactly the set of things /give accepts. Blocks deliberately
+    # registered without .item() -- merging glue, the fifteen dyed symmetric sails
+    # -- correctly do not appear.
+    for f in (SIM_BS.parent / 'models/item').glob('*.json'):
+        _items.add('simulated:' + f.stem)
 
     # Create ships its blockstates in its jar; read them from the compile classpath.
     jar = None
@@ -65,9 +61,6 @@ def load_states():
                 except Exception:
                     _states[bid] = {}
             elif name.startswith('assets/create/models/item/') and name.endswith('.json'):
-                _items.add('create:' + Path(name).stem)
-        for name in z.namelist():
-            if name.startswith('assets/create/blockstates/') and name.endswith('.json'):
                 _items.add('create:' + Path(name).stem)
 
 
@@ -100,7 +93,8 @@ VANILLA_OK = {'minecraft:cobblestone', 'minecraft:air', 'minecraft:redstone_lamp
               'minecraft:redstone_wire', 'minecraft:redstone_block', 'minecraft:chest',
               'minecraft:oak_sign', 'minecraft:lever', 'minecraft:stone', 'minecraft:glass',
               'minecraft:oak_planks', 'minecraft:piston', 'minecraft:comparator',
-              'minecraft:repeater', 'minecraft:barrel', 'minecraft:hopper'}
+              'minecraft:repeater', 'minecraft:barrel', 'minecraft:hopper',
+              'minecraft:slime_ball', 'minecraft:coal', 'minecraft:honeycomb'}
 
 
 def block(bid, **props):
@@ -150,7 +144,7 @@ class Fn:
         return self
 
     def say(self, msg):
-        return self.cmd('tellraw @s {"text":"%s","color":"aqua"}' % msg)
+        return self.cmd('tellraw @s ' + json.dumps({'text': msg, 'color': 'aqua'}))
 
     def set(self, x, z, bid, y=Y, **props):
         return self.cmd('setblock %d %d %d %s' % (x, y, z, block(bid, **props)))
@@ -302,9 +296,11 @@ def kit():
         'create:display_link', 'create:nixie_tube', 'create:shaft', 'create:cogwheel',
         'create:large_cogwheel', 'create:linked_controller', 'create:blaze_cake',
         'minecraft:coal', 'minecraft:redstone', 'minecraft:lever', 'minecraft:comparator',
-        'minecraft:honeycomb',
+        'minecraft:honeycomb', 'minecraft:slime_ball',
     ]
-    sim = ['simulated:honey_glue', 'simulated:merging_glue', 'simulated:spring',
+    # No simulated:merging_glue -- that block is registered without an item and is
+    # placed with slimeballs, so /give on it would not parse.
+    sim = ['simulated:honey_glue', 'simulated:spring',
            'simulated:rope_coupling', 'simulated:plunger_launcher', 'simulated:contraption_diagram',
            'simulated:creative_physics_staff', 'simulated:physics_assembler',
            'simulated:steering_wheel', 'simulated:navigation_table', 'simulated:linked_typewriter']
@@ -348,11 +344,36 @@ def help_fn():
         'simtest:kit             give test items',
         'simtest:clear           remove the bench',
     ]:
-        fn.cmd('tellraw @s {"text":"%s","color":"gray"}' % line)
+        fn.cmd('tellraw @s ' + json.dumps({'text': line, 'color': 'gray'}))
     return fn
 
 
 # ---------------------------------------------------------------- write
+
+
+def lint(fn):
+    """Catches commands that would not parse, which reject the whole function.
+
+    Minecraft does not run a function containing one bad command -- it discards
+    the file and reports it as unknown. That is what an unescaped quote inside a
+    tellraw did here: `build` and `clear` disappeared entirely while their
+    siblings loaded, which reads like a missing file rather than a syntax error.
+    """
+    for line in fn.lines:
+        if not line or line.startswith('#'):
+            continue
+        if line.startswith('tellraw '):
+            payload = line.split(' ', 2)[2] if line.count(' ') >= 2 else ''
+            try:
+                json.loads(payload)
+            except Exception as exc:
+                PROBLEMS.append('%s: tellraw payload is not valid JSON (%s): %s'
+                                % (fn.name, exc, payload[:70]))
+        if line.startswith(('setblock ', 'fill ')) and line.count('[') != line.count(']'):
+            PROBLEMS.append('%s: unbalanced [] in: %s' % (fn.name, line[:70]))
+        if line.count('{') != line.count('}'):
+            PROBLEMS.append('%s: unbalanced {} in: %s' % (fn.name, line[:70]))
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -365,6 +386,9 @@ def main():
     platform('platform_big', 256, '512x512 cobble platform. Needs render distance 16.')
     module_a(); module_b(); module_c(); module_d()
     kit(); build_all(); clear_fn(); help_fn()
+
+    for fn in FUNCTIONS:
+        lint(fn)
 
     if PROBLEMS:
         print('%d problem(s) -- nothing written:' % len(PROBLEMS))
